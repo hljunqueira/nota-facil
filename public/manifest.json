@@ -1,0 +1,24 @@
+{
+  "name": "Nota Fácil — Emissão e Retorno de Notas Fiscais",
+  "short_name": "Nota Fácil",
+  "description": "SaaS B2B para facções de costura emitirem notas de retorno e serviços em 1 clique",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#10B981",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logoNF.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logoNF-fundobranco.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

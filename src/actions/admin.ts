@@ -1,0 +1,603 @@
+"use server";
+
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prismaAdmin } from "@/lib/prismaAdmin";
+import {
+  createCompanyInFocus,
+  uploadCertificateToFocus,
+  registerWebhooksInFocus,
+} from "@/lib/services/focusNfe";
+import { StatusCadastro, StatusConta, AmbienteFiscal } from "@prisma/client";
+import { revalidatePath } from "next/cache";
+import bcrypt from "bcryptjs";
+
+async function requireAdminSession() {
+  const session = await getServerSession(authOptions);
+  if (!session || session.user?.role !== "ADMIN") {
+    throw new Error("Acesso não autorizado. É necessário privilégio de Administrador Master.");
+  }
+  return session;
+}
+
+/**
+ * Retorna estatísticas gerais para o painel /admin
+ */
+export async function getAdminOverviewStatsAction() {
+  await requireAdminSession();
+
+  const [totalTenants, pendentes, aprovados, rejeitados, totalNotas] =
+    await Promise.all([
+      prismaAdmin.tenant.count(),
+      prismaAdmin.tenant.count({ where: { statusCadastro: StatusCadastro.PENDENTE_ANALISE } }),
+      prismaAdmin.tenant.count({ where: { statusCadastro: StatusCadastro.APROVADO } }),
+      prismaAdmin.tenant.count({ where: { statusCadastro: StatusCadastro.REJEITADO } }),
+      prismaAdmin.invoice.count(),
+    ]);
+
+  return {
+    totalTenants,
+    pendentes,
+    aprovados,
+    rejeitados,
+    totalNotas,
+  };
+}
+
+/**
+ * Retorna a fila de cadastros pendentes de análise
+ */
+export async function getPendingTenantsAction() {
+  await requireAdminSession();
+
+  const pendentes = await prismaAdmin.tenant.findMany({
+    where: { statusCadastro: StatusCadastro.PENDENTE_ANALISE },
+    orderBy: { createdAt: "desc" },
+    include: {
+      users: { select: { id: true, nome: true, email: true } },
+    },
+  });
+
+  return pendentes;
+}
+
+/**
+ * Retorna todas as empresas cadastradas com busca e filtros
+ */
+export async function getAllTenantsAction(search?: string, statusCadastro?: string) {
+  await requireAdminSession();
+
+  const where: any = {};
+
+  if (statusCadastro && statusCadastro !== "ALL") {
+    where.statusCadastro = statusCadastro as StatusCadastro;
+  }
+
+  if (search && search.trim() !== "") {
+    const q = search.trim();
+    where.OR = [
+      { razaoSocial: { contains: q, mode: "insensitive" } },
+      { nomeFantasia: { contains: q, mode: "insensitive" } },
+      { cnpj: { contains: q.replace(/\D/g, "") } },
+      { emailPrincipal: { contains: q, mode: "insensitive" } },
+    ];
+  }
+
+  const tenants = await prismaAdmin.tenant.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    include: {
+      users: { select: { id: true, nome: true, email: true } },
+      _count: { select: { invoices: true, partners: true } },
+    },
+  });
+
+  return tenants;
+}
+
+/**
+ * Aprova o cadastro de uma oficina
+ */
+export async function approveTenantAction(tenantId: string) {
+  const session = await requireAdminSession();
+
+  const tenant = await prismaAdmin.tenant.findUnique({
+    where: { id: tenantId },
+  });
+
+  if (!tenant) {
+    return { success: false, error: "Oficina não encontrada" };
+  }
+
+  await prismaAdmin.$transaction(async (tx) => {
+    await tx.tenant.update({
+      where: { id: tenantId },
+      data: {
+        statusCadastro: StatusCadastro.APROVADO,
+        motivoRejeicao: null,
+      },
+    });
+
+    // Auto-criação das regras padrão de CFOP (5901 -> 5902 / 6901 -> 6902)
+    await tx.cfopRule.upsert({
+      where: {
+        tenantId_cfopEntrada: {
+          tenantId,
+          cfopEntrada: "5901",
+        },
+      },
+      update: {
+        cfopSaidaCorrespondente: "5902",
+        finalidadeGerada: "Retorno de mercadoria recebida para industrialização",
+        ativo: true,
+      },
+      create: {
+        tenantId,
+        cfopEntrada: "5901",
+        cfopSaidaCorrespondente: "5902",
+        finalidadeGerada: "Retorno de mercadoria recebida para industrialização",
+        ativo: true,
+      },
+    });
+
+    await tx.cfopRule.upsert({
+      where: {
+        tenantId_cfopEntrada: {
+          tenantId,
+          cfopEntrada: "6901",
+        },
+      },
+      update: {
+        cfopSaidaCorrespondente: "6902",
+        finalidadeGerada: "Retorno de mercadoria recebida para industrialização (Interestadual)",
+        ativo: true,
+      },
+      create: {
+        tenantId,
+        cfopEntrada: "6901",
+        cfopSaidaCorrespondente: "6902",
+        finalidadeGerada: "Retorno de mercadoria recebida para industrialização (Interestadual)",
+        ativo: true,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorType: "ADMIN",
+        actorId: session.user.id,
+        acao: "APROVACAO_CADASTRO",
+        entidade: "Tenant",
+        entidadeId: tenantId,
+        detalhe: {
+          adminEmail: session.user.email,
+          statusAnterior: tenant.statusCadastro,
+          novoStatus: "APROVADO",
+        },
+      },
+    });
+  });
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/aprovacoes");
+  revalidatePath("/admin/tenants");
+
+  return { success: true };
+}
+
+/**
+ * Rejeita o cadastro de uma oficina com justificativa
+ */
+export async function rejectTenantAction(tenantId: string, motivo: string) {
+  const session = await requireAdminSession();
+
+  if (!motivo || motivo.trim().length < 5) {
+    return { success: false, error: "Informe uma justificativa clara para a rejeição (mínimo 5 caracteres)." };
+  }
+
+  const tenant = await prismaAdmin.tenant.findUnique({
+    where: { id: tenantId },
+  });
+
+  if (!tenant) {
+    return { success: false, error: "Oficina não encontrada" };
+  }
+
+  await prismaAdmin.$transaction(async (tx) => {
+    await tx.tenant.update({
+      where: { id: tenantId },
+      data: {
+        statusCadastro: StatusCadastro.REJEITADO,
+        motivoRejeicao: motivo.trim(),
+        statusConta: StatusConta.SUSPENSO_ADMIN,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorType: "ADMIN",
+        actorId: session.user.id,
+        acao: "REJEICAO_CADASTRO",
+        entidade: "Tenant",
+        entidadeId: tenantId,
+        detalhe: {
+          adminEmail: session.user.email,
+          motivo: motivo.trim(),
+        },
+      },
+    });
+  });
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/aprovacoes");
+  revalidatePath("/admin/tenants");
+
+  return { success: true };
+}
+
+/**
+ * Registra a empresa na Focus NFe usando o Master Token
+ */
+export async function registerFocusCompanyAction(tenantId: string, addressOverride?: any) {
+  const session = await requireAdminSession();
+
+  const tenant = await prismaAdmin.tenant.findUnique({
+    where: { id: tenantId },
+  });
+
+  if (!tenant) {
+    return { success: false, error: "Oficina não encontrada" };
+  }
+
+  const focusResult = await createCompanyInFocus(
+    {
+      nome: tenant.razaoSocial,
+      nomeFantasia: tenant.nomeFantasia || tenant.razaoSocial,
+      cnpj: tenant.cnpj,
+      inscricaoEstadual: tenant.inscricaoEstadual,
+      email: tenant.emailPrincipal,
+      telefone: tenant.telefoneContato,
+      logradouro: addressOverride?.logradouro,
+      numero: addressOverride?.numero,
+      bairro: addressOverride?.bairro,
+      municipio: addressOverride?.municipio,
+      uf: addressOverride?.uf,
+      cep: addressOverride?.cep,
+    },
+    tenant.ambiente
+  );
+
+  if (!focusResult.success || !focusResult.data) {
+    return {
+      success: false,
+      error: focusResult.error || "Não foi possível registrar a empresa na Focus NFe",
+    };
+  }
+
+  // Atualiza no banco os tokens retornados pela Focus
+  await prismaAdmin.$transaction(async (tx) => {
+    await tx.tenant.update({
+      where: { id: tenantId },
+      data: {
+        focusNfeIdEmpresa: focusResult.data!.id,
+        focusNfeTokenHomologacao: focusResult.data!.token_homologacao || null,
+        focusNfeTokenProducao: focusResult.data!.token_producao || null,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorType: "ADMIN",
+        actorId: session.user.id,
+        acao: "FOCUS_NFE_EMPRESA_REGISTRADA",
+        entidade: "Tenant",
+        entidadeId: tenantId,
+        detalhe: {
+          focusNfeId: focusResult.data!.id,
+          habilitaNfe: focusResult.data!.habilita_nfe,
+          habilitaManifestacao: focusResult.data!.habilita_manifestacao,
+        },
+      },
+    });
+  });
+
+  // Registra os Webhooks na Focus NFe em background
+  await registerWebhooksInFocus(tenant.cnpj, tenant.ambiente);
+
+  revalidatePath("/admin/aprovacoes");
+  revalidatePath("/admin/tenants");
+
+  return {
+    success: true,
+    focusCompanyId: focusResult.data.id,
+  };
+}
+
+/**
+ * Upload seguro do certificado A1 (.pfx) com senha diretamente para a Focus NFe
+ * ZERO-STORAGE: Nunca é persistido em disco ou banco.
+ */
+export async function uploadCertificateAction(formData: FormData) {
+  const session = await requireAdminSession();
+
+  const tenantId = formData.get("tenantId") as string;
+  const password = formData.get("password") as string;
+  const certFile = formData.get("certificate") as File | null;
+
+  if (!tenantId || !password || !certFile) {
+    return { success: false, error: "Arquivo de certificado (.pfx) e senha são obrigatórios." };
+  }
+
+  const tenant = await prismaAdmin.tenant.findUnique({
+    where: { id: tenantId },
+  });
+
+  if (!tenant) {
+    return { success: false, error: "Oficina não encontrada" };
+  }
+
+  if (!tenant.focusNfeIdEmpresa) {
+    return {
+      success: false,
+      error: "Esta oficina ainda não foi registrada na Focus NFe. Registre-a primeiro.",
+    };
+  }
+
+  // Lê os bytes do arquivo em buffer efêmero
+  const arrayBuffer = await certFile.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  const uploadResult = await uploadCertificateToFocus(
+    tenant.focusNfeIdEmpresa,
+    buffer,
+    password,
+    tenant.ambiente
+  );
+
+  if (!uploadResult.success) {
+    return {
+      success: false,
+      error: uploadResult.error || "Falha ao validar ou enviar certificado para a Focus NFe",
+    };
+  }
+
+  // Atualiza a validade do certificado e ativa a conta da oficina
+  await prismaAdmin.$transaction(async (tx) => {
+    await tx.tenant.update({
+      where: { id: tenantId },
+      data: {
+        certificadoValidoAte: uploadResult.validoAte || null,
+        statusConta: StatusConta.ATIVO,
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorType: "ADMIN",
+        actorId: session.user.id,
+        acao: "CERTIFICADO_A1_CONFIGURADO",
+        entidade: "Tenant",
+        entidadeId: tenantId,
+        detalhe: {
+          validoAte: uploadResult.validoAte?.toISOString(),
+          statusContaAnterior: tenant.statusConta,
+          novoStatusConta: "ATIVO",
+        },
+      },
+    });
+  });
+
+  revalidatePath("/admin/aprovacoes");
+  revalidatePath("/admin/tenants");
+
+  return {
+    success: true,
+    validoAte: uploadResult.validoAte?.toISOString(),
+  };
+}
+
+/**
+ * Altera o ambiente fiscal do tenant (HOMOLOGACAO <-> PRODUCAO)
+ */
+export async function toggleFiscalEnvironmentAction(
+  tenantId: string,
+  novoAmbiente: "HOMOLOGACAO" | "PRODUCAO"
+) {
+  const session = await requireAdminSession();
+
+  const tenant = await prismaAdmin.tenant.findUnique({
+    where: { id: tenantId },
+  });
+
+  if (!tenant) {
+    return { success: false, error: "Oficina não encontrada" };
+  }
+
+  await prismaAdmin.$transaction(async (tx) => {
+    await tx.tenant.update({
+      where: { id: tenantId },
+      data: { ambiente: novoAmbiente as AmbienteFiscal },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorType: "ADMIN",
+        actorId: session.user.id,
+        acao: "ALTERACAO_AMBIENTE_FISCAL",
+        entidade: "Tenant",
+        entidadeId: tenantId,
+        detalhe: {
+          ambienteAnterior: tenant.ambiente,
+          novoAmbiente,
+          adminEmail: session.user.email,
+        },
+      },
+    });
+  });
+
+  revalidatePath("/admin/tenants");
+  return { success: true };
+}
+
+/**
+ * Suspende manualmente a conta de uma oficina (Admin)
+ */
+export async function suspendTenantAction(tenantId: string, motivo: string) {
+  const session = await requireAdminSession();
+
+  const tenant = await prismaAdmin.tenant.findUnique({
+    where: { id: tenantId },
+  });
+
+  if (!tenant) {
+    return { success: false, error: "Oficina não encontrada." };
+  }
+
+  await prismaAdmin.$transaction(async (tx) => {
+    await tx.tenant.update({
+      where: { id: tenantId },
+      data: { statusConta: StatusConta.SUSPENSO_ADMIN },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorType: "ADMIN",
+        actorId: session.user.id,
+        acao: "TENANT_SUSPENSO",
+        entidade: "Tenant",
+        entidadeId: tenantId,
+        detalhe: {
+          adminEmail: session.user.email,
+          motivo: motivo?.trim() || "Suspensão manual realizada pela administração",
+          statusAnterior: tenant.statusConta,
+        },
+      },
+    });
+  });
+
+  revalidatePath("/admin/tenants");
+  return { success: true, message: "Oficina suspensa com sucesso." };
+}
+
+/**
+ * Reativa a conta de uma oficina suspensa (Admin)
+ */
+export async function reactivateTenantAction(tenantId: string) {
+  const session = await requireAdminSession();
+
+  const tenant = await prismaAdmin.tenant.findUnique({
+    where: { id: tenantId },
+  });
+
+  if (!tenant) {
+    return { success: false, error: "Oficina não encontrada." };
+  }
+
+  await prismaAdmin.$transaction(async (tx) => {
+    await tx.tenant.update({
+      where: { id: tenantId },
+      data: { statusConta: StatusConta.ATIVO },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorType: "ADMIN",
+        actorId: session.user.id,
+        acao: "TENANT_REATIVADO",
+        entidade: "Tenant",
+        entidadeId: tenantId,
+        detalhe: {
+          adminEmail: session.user.email,
+          statusAnterior: tenant.statusConta,
+        },
+      },
+    });
+  });
+
+  revalidatePath("/admin/tenants");
+  return { success: true, message: "Oficina reativada com sucesso." };
+}
+
+/**
+ * Consulta o histórico de auditoria de um tenant
+ */
+export async function getTenantAuditLogsAction(tenantId: string, limit = 50) {
+  await requireAdminSession();
+
+  const logs = await prismaAdmin.auditLog.findMany({
+    where: { tenantId },
+    orderBy: { timestamp: "desc" },
+    take: limit,
+  });
+
+  return logs.map((l) => ({
+    id: l.id,
+    tenantId: l.tenantId,
+    actorType: l.actorType,
+    actorId: l.actorId,
+    acao: l.acao,
+    entidade: l.entidade,
+    entidadeId: l.entidadeId,
+    detalhe: l.detalhe,
+    timestamp: l.timestamp.toISOString(),
+  }));
+}
+
+/**
+ * Permite ao Administrador Master redefinir manualmente a senha do titular de uma empresa
+ */
+export async function resetTenantUserPasswordAction(
+  tenantId: string,
+  userId: string,
+  newPassword: string
+) {
+  const session = await requireAdminSession();
+
+  if (!newPassword || newPassword.trim().length < 6) {
+    return { success: false, error: "A nova senha deve conter no mínimo 6 caracteres." };
+  }
+
+  const user = await prismaAdmin.user.findFirst({
+    where: { id: userId, tenantId },
+  });
+
+  if (!user) {
+    return { success: false, error: "Usuário não encontrado nesta empresa." };
+  }
+
+  const salt = await bcrypt.genSalt(10);
+  const senhaHash = await bcrypt.hash(newPassword.trim(), salt);
+
+  await prismaAdmin.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: user.id },
+      data: { senhaHash },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        actorType: "ADMIN",
+        actorId: session.user.id,
+        acao: "RESET_SENHA_USUARIO_ADMIN",
+        entidade: "User",
+        entidadeId: user.id,
+        detalhe: {
+          adminEmail: session.user.email,
+          userEmail: user.email,
+          userName: user.nome,
+        },
+      },
+    });
+  });
+
+  revalidatePath("/admin/tenants");
+  return { success: true, message: "Senha redefinida com sucesso!" };
+}
+

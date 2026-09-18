@@ -1,0 +1,195 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum StatusCadastro {
+  PENDENTE_ANALISE
+  APROVADO
+  REJEITADO
+}
+
+enum StatusConta {
+  EM_ONBOARDING
+  ATIVO
+  SUSPENSO_PAGAMENTO
+  SUSPENSO_ADMIN
+}
+
+enum AmbienteFiscal {
+  HOMOLOGACAO
+  PRODUCAO
+}
+
+enum UserRole {
+  ADMIN
+  TENANT
+}
+
+enum TipoDestinatario {
+  CONTADOR
+  PARCEIRO
+  INTERNO_ALERTA
+}
+
+enum CanalNotificacao {
+  EMAIL
+  WHATSAPP
+}
+
+enum TipoNota {
+  ENTRADA
+  SAIDA
+}
+
+enum StatusNota {
+  PENDENTE
+  AUTORIZADA
+  REJEITADA
+  CANCELADA
+}
+
+model Tenant {
+  id                        String          @id @default(cuid())
+  razaoSocial               String
+  nomeFantasia              String?
+  cnpj                      String          @unique
+  inscricaoEstadual         String
+  emailPrincipal            String
+  telefoneContato           String
+  statusCadastro            StatusCadastro  @default(PENDENTE_ANALISE)
+  motivoRejeicao            String?
+  statusConta               StatusConta     @default(EM_ONBOARDING)
+  ambiente                  AmbienteFiscal  @default(HOMOLOGACAO)
+  focusNfeIdEmpresa         Int?
+  focusNfeTokenHomologacao  String?
+  focusNfeTokenProducao     String?
+  certificadoValidoAte      DateTime?
+  lastMdeVersao             BigInt          @default(0)
+  serieNfe                  Int             @default(1)
+  proximoNumero             Int             @default(1)
+  asaasCustomerId           String?
+  asaasSubscriptionId       String?
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+
+  users                     User[]
+  partners                  Partner[]
+  notificationRecipients    NotificationRecipient[]
+  cfopRules                 CfopRule[]
+  invoices                  Invoice[]
+  auditLogs                 AuditLog[]
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  senhaHash     String
+  nome          String
+  role          UserRole  @default(TENANT)
+  tenantId      String?
+  tenant        Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model PlatformAdmin {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  senhaHash     String
+  nome          String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Partner {
+  id            String    @id @default(cuid())
+  razaoSocial   String
+  nomeFantasia  String?
+  cnpj          String
+  email         String?
+  telefone      String?
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoices      Invoice[]
+  recipients    NotificationRecipient[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([tenantId, cnpj])
+}
+
+model NotificationRecipient {
+  id            String           @id @default(cuid())
+  tenantId      String
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tipo          TipoDestinatario
+  canal         CanalNotificacao @default(WHATSAPP)
+  email         String?
+  telefone      String?
+  nome          String
+  partnerId     String?
+  partner       Partner?         @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  ativo         Boolean          @default(true)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+model CfopRule {
+  id                      String    @id @default(cuid())
+  tenantId                String
+  tenant                  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cfopEntrada             String
+  cfopSaidaCorrespondente String
+  finalidadeGerada        String    @default("Retorno de Industrializacao")
+  ativo                   Boolean   @default(true)
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@unique([tenantId, cfopEntrada])
+}
+
+model Invoice {
+  id              String      @id @default(cuid())
+  numero          Int
+  serie           Int
+  chaveAcesso     String?     @unique
+  tipo            TipoNota
+  finalidade      String
+  status          StatusNota  @default(PENDENTE)
+  valorTotal      Decimal     @db.Decimal(10, 2)
+  dataEmissao     DateTime
+  xmlUrl          String?
+  pdfUrl          String?
+  focusNfeRef     String?     @unique
+  idempotencyKey  String      @unique
+  rawJson         Json?
+  tenantId        String
+  tenant          Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  partnerId       String?
+  partner         Partner?    @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([tenantId, dataEmissao])
+  @@index([tenantId, status])
+}
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  tenantId    String?
+  tenant      Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actorType   String    // "ADMIN" | "USER" | "SYSTEM"
+  actorId     String
+  acao        String    // ex: "APROVACAO_CADASTRO", "EMISSAO_NFE", "CANCELAMENTO_NFE"
+  entidade    String    // ex: "Tenant", "Invoice", "FocusNfe"
+  entidadeId  String
+  detalhe     Json?
+  timestamp   DateTime  @default(now())
+
+  @@index([tenantId, timestamp])
+}

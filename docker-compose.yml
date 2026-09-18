@@ -1,0 +1,123 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    container_name: notafacil-app
+    restart: always
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - notafacil-net
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: notafacil-worker
+    restart: always
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - notafacil-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: notafacil-db
+    restart: always
+    environment:
+      POSTGRES_DB: notafacil
+      POSTGRES_USER: notafacil
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-notafacil_secure_pass_2026}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - notafacil_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notafacil -d notafacil"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - notafacil-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: notafacil-redis
+    restart: always
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - notafacil_redis_data:/data
+    networks:
+      - notafacil-net
+
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.6
+    container_name: notafacil-evolution
+    restart: always
+    environment:
+      - SERVER_TYPE=http
+      - SERVER_PORT=8080
+      - SERVER_URL=https://wa.appnotafacil.online
+      - CORS_ORIGIN=*
+      - AUTHENTICATION_TYPE=apikey
+      - AUTHENTICATION_EXPOSE_IN_HEADER_API_KEY=true
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:-NOTAFACIL_EVO_KEY_2026_SECURE}
+      - MANAGER_TOKEN=${EVOLUTION_API_KEY:-NOTAFACIL_EVO_KEY_2026_SECURE}
+      - AUTH_TOKEN=${EVOLUTION_API_KEY:-NOTAFACIL_EVO_KEY_2026_SECURE}
+      - DEL_INSTANCE_ON_DISCONNECT=false
+      - DATABASE_ENABLED=true
+      - DATABASE_CONNECTION_URI=postgresql://notafacil:${DB_PASSWORD:-notafacil_secure_pass_2026}@notafacil-db:5432/notafacil?schema=notafacil_evo
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_CLIENT=postgresql
+      - DATABASE_SAVE_DATA_HISTORY_MESSAGES=false
+      - DATABASE_SAVE_DATA_MESSAGES=true
+      - DATABASE_SAVE_MESSAGES=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
+      - DATABASE_SAVE_DATA_CHATS=true
+      - REDIS_ENABLED=true
+      - REDIS_URI=redis://notafacil-redis:6379
+      - REDIS_PREFIX=NOTAFACIL_EVO
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://notafacil-redis:6379
+      - CACHE_REDIS_PREFIX=NOTAFACIL_EVO_CACHE
+      - CONFIG_SESSION_PHONE_CLIENT_NAME=Nota Facil Bot
+      - WA_VERSION=2.3000.1032750324
+    volumes:
+      - notafacil_evo_data:/evolution/instances
+    ports:
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - notafacil-net
+
+volumes:
+  notafacil_pgdata:
+  notafacil_redis_data:
+  notafacil_evo_data:
+
+networks:
+  notafacil-net:
+    driver: bridge
