@@ -4,7 +4,6 @@ import React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { EnvironmentBadge } from "./EnvironmentBadge";
 
 export function Navbar() {
   const { data: session } = useSession();
@@ -28,11 +27,8 @@ export function Navbar() {
       </div>
 
       <div className="flex items-center gap-3">
-        {/* Badge de Ambiente Discreto */}
-        <EnvironmentBadge ambiente={session?.user?.ambiente} />
-
         {/* Informações da Oficina / Usuário */}
-        <div className="flex items-center gap-3 pl-3 border-l border-slate-200">
+        <div className="flex items-center gap-3">
           <div className="flex flex-col text-right">
             <span className="text-xs font-medium text-slate-900 leading-tight">
               {session?.user?.name || "Usuário"}

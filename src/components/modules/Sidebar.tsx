@@ -8,7 +8,6 @@ import {
   LayoutDashboard,
   FileText,
   Building2,
-  FolderArchive,
   CreditCard,
   Settings,
   LogOut,
@@ -31,11 +30,6 @@ const navigationItems = [
     icon: Building2,
   },
   {
-    name: "Fechamento",
-    href: "/fechamento",
-    icon: FolderArchive,
-  },
-  {
     name: "Assinatura",
     href: "/assinatura",
     icon: CreditCard,
@@ -52,9 +46,8 @@ const mobileItems = [
   { name: "Início", href: "/dashboard", icon: LayoutDashboard },
   { name: "Notas", href: "/notas", icon: FileText },
   { name: "Parceiros", href: "/parceiros", icon: Building2 },
-  { name: "Fechamento", href: "/fechamento", icon: FolderArchive },
   { name: "Assinatura", href: "/assinatura", icon: CreditCard },
-  { name: "Ajustes", href: "/configuracoes", icon: Settings },
+  { name: "Configurações", href: "/configuracoes", icon: Settings },
 ];
 
 export function Sidebar() {

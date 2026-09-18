@@ -372,3 +372,68 @@ export async function testTenantFocusConnectionAction(data: {
   await requireTenantSession();
   return await testFocusTokenConnection(data);
 }
+
+/**
+ * Atualiza os dados cadastrais da oficina (Razão Social, Nome Fantasia, Telefone, Email, IE)
+ */
+export async function updateTenantCompanyDataAction(data: {
+  razaoSocial: string;
+  nomeFantasia?: string | null;
+  telefoneContato: string;
+  emailPrincipal: string;
+  inscricaoEstadual: string;
+}) {
+  const { tenantId, session } = await requireTenantSession();
+
+  if (!data.razaoSocial?.trim()) {
+    return { success: false, error: "Razão Social é obrigatória." };
+  }
+  if (!data.emailPrincipal?.trim() || !data.emailPrincipal.includes("@")) {
+    return { success: false, error: "E-mail principal inválido." };
+  }
+  if (!data.telefoneContato?.trim()) {
+    return { success: false, error: "Telefone de contato é obrigatório." };
+  }
+
+  try {
+    const updated = await prismaAdmin.tenant.update({
+      where: { id: tenantId },
+      data: {
+        razaoSocial: data.razaoSocial.trim(),
+        nomeFantasia: data.nomeFantasia?.trim() || null,
+        telefoneContato: data.telefoneContato.trim(),
+        emailPrincipal: data.emailPrincipal.trim().toLowerCase(),
+        inscricaoEstadual: data.inscricaoEstadual?.trim() || "ISENTO",
+      },
+    });
+
+    try {
+      await prismaAdmin.auditLog.create({
+        data: {
+          tenantId,
+          actorType: "USER",
+          actorId: session.user.id || "USER",
+          acao: "ATUALIZACAO_DADOS_EMPRESA",
+          entidade: "Tenant",
+          entidadeId: tenantId,
+          detalhe: {
+            razaoSocial: updated.razaoSocial,
+            nomeFantasia: updated.nomeFantasia,
+            telefoneContato: updated.telefoneContato,
+            emailPrincipal: updated.emailPrincipal,
+            inscricaoEstadual: updated.inscricaoEstadual,
+          },
+        },
+      });
+    } catch {
+      // silencia log em caso de indisponibilidade
+    }
+
+    revalidatePath("/configuracoes");
+    revalidatePath("/dashboard");
+    return { success: true, tenant: updated };
+  } catch (err: any) {
+    console.error("[updateTenantCompanyDataAction] Erro:", err);
+    return { success: false, error: err.message || "Erro ao atualizar dados cadastrais da empresa." };
+  }
+}

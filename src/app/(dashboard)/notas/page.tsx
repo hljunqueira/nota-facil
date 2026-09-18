@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   FileText,
   RefreshCw,
@@ -18,6 +19,7 @@ import {
   Send,
   FileArchive,
   FileX,
+  MessageCircle,
 } from "lucide-react";
 import {
   getInvoicesAction,
@@ -126,6 +128,33 @@ export default function NotasPage() {
     setShowCancelModal(true);
   };
 
+  const handleShareInvoice = (inv: any) => {
+    const formattedValue = new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(Number(inv.valorTotal));
+
+    const partnerName = inv.partner?.razaoSocial || "Parceiro";
+    const shareText = `*Nota Fácil — NF-e Nº ${inv.numero} (Série ${inv.serie})*\n` +
+      `📄 *Destinatário/Emissor:* ${partnerName}\n` +
+      `💰 *Valor Total:* ${formattedValue}\n` +
+      `🔑 *Chave SEFAZ:* ${inv.chaveAcesso || "Aguardando homologação"}\n` +
+      (inv.pdfUrl ? `📥 *DANFE (PDF):* ${inv.pdfUrl}\n` : "") +
+      (inv.xmlUrl ? `📁 *XML SEFAZ:* ${inv.xmlUrl}\n` : "");
+
+    if (typeof navigator !== "undefined" && navigator.share) {
+      navigator.share({
+        title: `NF-e Nº ${inv.numero} - ${partnerName}`,
+        text: shareText,
+        url: inv.pdfUrl || window.location.href,
+      }).catch(() => {
+        window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, "_blank");
+      });
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, "_blank");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -140,13 +169,13 @@ export default function NotasPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={() => setShowMonthlyCloseModal(true)}
+          <Link
+            href="/configuracoes?tab=fechamento"
             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-semibold transition-all cursor-pointer shadow-xs"
           >
             <FileArchive className="w-4 h-4 text-emerald-400" />
-            <span>Fechar Mês do Contador (.ZIP)</span>
-          </button>
+            <span>Fechamento Mensal (.ZIP)</span>
+          </Link>
           <button
             onClick={() => setShowImportModal(true)}
             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-all cursor-pointer"
@@ -395,6 +424,17 @@ export default function NotasPage() {
                           >
                             <FileText className="w-4 h-4 text-blue-600" />
                           </a>
+                        )}
+
+                        {/* Compartilhar / WhatsApp pelo celular */}
+                        {inv.status === "AUTORIZADA" && (
+                          <button
+                            onClick={() => handleShareInvoice(inv)}
+                            title="Enviar por WhatsApp / Compartilhar no Celular"
+                            className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 cursor-pointer transition-colors"
+                          >
+                            <MessageCircle className="w-4 h-4" />
+                          </button>
                         )}
                       </div>
                     </td>

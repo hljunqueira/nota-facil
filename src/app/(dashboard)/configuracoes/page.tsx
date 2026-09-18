@@ -1,10 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import {
-  Settings,
   Mail,
-  Phone,
   FileText,
   ShieldCheck,
   Building2,
@@ -16,8 +15,13 @@ import {
   Sparkles,
   Save,
   KeyRound,
+  CalendarCheck2,
+  MessageCircle,
+  Lock,
 } from "lucide-react";
 import { FiscalIntegrationTab } from "@/components/modules/settings/FiscalIntegrationTab";
+import { WhatsAppConnectionTab } from "@/components/modules/settings/WhatsAppConnectionTab";
+import { MonthlyCloseTab } from "@/components/modules/settings/MonthlyCloseTab";
 import {
   getTenantConfigAction,
   saveNotificationRecipientAction,
@@ -26,16 +30,33 @@ import {
   applyDefaultCfopRulesAction,
   deleteCfopRuleAction,
   updateInvoiceSequenceAction,
+  updateTenantCompanyDataAction,
 } from "@/actions/tenantConfig";
 
-export default function ConfiguracoesPage() {
-  const [activeTab, setActiveTab] = useState<"contatos" | "cfop" | "fiscal" | "empresa" | "tokens">("contatos");
+type TabId = "contatos" | "fechamento" | "whatsapp" | "empresa" | "cfop" | "fiscal" | "tokens";
+
+function ConfiguracoesContent() {
+  const searchParams = useSearchParams();
+  const initialTab = (searchParams.get("tab") as TabId) || "contatos";
+
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const [loading, setLoading] = useState(true);
   const [tenant, setTenant] = useState<any | null>(null);
   const [recipients, setRecipients] = useState<any[]>([]);
   const [cfopRules, setCfopRules] = useState<any[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Formulário de dados cadastrais da empresa
+  const [companyForm, setCompanyForm] = useState({
+    razaoSocial: "",
+    nomeFantasia: "",
+    cnpj: "",
+    inscricaoEstadual: "",
+    emailPrincipal: "",
+    telefoneContato: "",
+  });
+  const [savingCompany, setSavingCompany] = useState(false);
 
   // Formulário de novo destinatário
   const [newRecipient, setNewRecipient] = useState({
@@ -60,6 +81,14 @@ export default function ConfiguracoesPage() {
   const [proximoNumero, setProximoNumero] = useState(1);
   const [savingFiscal, setSavingFiscal] = useState(false);
 
+  // Sincronizar tab pela URL caso o usuário navegue ou redirecione
+  useEffect(() => {
+    const tabParam = searchParams.get("tab") as TabId;
+    if (tabParam && ["contatos", "fechamento", "whatsapp", "empresa", "cfop", "fiscal", "tokens"].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -71,6 +100,14 @@ export default function ConfiguracoesPage() {
       if (data.tenant) {
         setSerieNfe(data.tenant.serieNfe || 1);
         setProximoNumero(data.tenant.proximoNumero || 1);
+        setCompanyForm({
+          razaoSocial: data.tenant.razaoSocial || "",
+          nomeFantasia: data.tenant.nomeFantasia || "",
+          cnpj: data.tenant.cnpj || "",
+          inscricaoEstadual: data.tenant.inscricaoEstadual || "",
+          emailPrincipal: data.tenant.emailPrincipal || "",
+          telefoneContato: data.tenant.telefoneContato || "",
+        });
       }
     } catch (err) {
       console.error("Erro ao carregar configurações:", err);
@@ -82,6 +119,35 @@ export default function ConfiguracoesPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleSaveCompany = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingCompany(true);
+    setErrorMessage(null);
+
+    try {
+      const res = await updateTenantCompanyDataAction({
+        razaoSocial: companyForm.razaoSocial,
+        nomeFantasia: companyForm.nomeFantasia,
+        inscricaoEstadual: companyForm.inscricaoEstadual,
+        emailPrincipal: companyForm.emailPrincipal,
+        telefoneContato: companyForm.telefoneContato,
+      });
+
+      if (!res.success) {
+        setErrorMessage(res.error || "Erro ao salvar dados da empresa.");
+        setSavingCompany(false);
+        return;
+      }
+
+      setToastMessage("Dados da empresa atualizados com sucesso!");
+      loadData();
+    } catch {
+      setErrorMessage("Erro de conexão ao salvar dados da empresa.");
+    } finally {
+      setSavingCompany(false);
+    }
+  };
 
   const handleAddRecipient = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,7 +290,7 @@ export default function ConfiguracoesPage() {
             Configurações da Oficina
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Gestão de contatos de envio, regras fiscais de retorno e numeração SEFAZ
+            Gestão de contatos, WhatsApp da oficina, fechamento contábil e dados da empresa
           </p>
         </div>
       </div>
@@ -237,7 +303,7 @@ export default function ConfiguracoesPage() {
           </div>
           <button
             onClick={() => setToastMessage(null)}
-            className="text-emerald-700 font-bold hover:underline"
+            className="text-emerald-700 font-bold hover:underline cursor-pointer"
           >
             Fechar
           </button>
@@ -252,7 +318,7 @@ export default function ConfiguracoesPage() {
           </div>
           <button
             onClick={() => setErrorMessage(null)}
-            className="text-red-700 font-bold hover:underline"
+            className="text-red-700 font-bold hover:underline cursor-pointer"
           >
             Fechar
           </button>
@@ -263,17 +329,19 @@ export default function ConfiguracoesPage() {
       <div className="flex border-b border-slate-200 bg-white rounded-2xl p-1.5 gap-1 shadow-xs overflow-x-auto">
         {[
           { id: "contatos", label: "Destinatários & Contador", icon: Mail },
+          { id: "fechamento", label: "Fechamento Mensal", icon: CalendarCheck2 },
+          { id: "whatsapp", label: "Conexão WhatsApp", icon: MessageCircle },
+          { id: "empresa", label: "Dados da Empresa", icon: Building2 },
           { id: "cfop", label: "Regras de CFOP", icon: FileText },
           { id: "fiscal", label: "Parâmetros Fiscais", icon: ShieldCheck },
           { id: "tokens", label: "Integração Focus NFe", icon: KeyRound },
-          { id: "empresa", label: "Dados Cadastrais", icon: Building2 },
         ].map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+            onClick={() => setActiveTab(tab.id as TabId)}
+            className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
               activeTab === tab.id
-                ? "bg-primary text-white shadow-xs"
+                ? "bg-primary text-white shadow-xs font-bold"
                 : "text-slate-600 hover:bg-slate-100 hover:text-ink"
             }`}
           >
@@ -283,7 +351,142 @@ export default function ConfiguracoesPage() {
         ))}
       </div>
 
-      {/* TAB 1: DESTINATÁRIOS */}
+      {/* TAB: FECHAMENTO MENSAL */}
+      {activeTab === "fechamento" && (
+        <MonthlyCloseTab />
+      )}
+
+      {/* TAB: CONEXÃO WHATSAPP */}
+      {activeTab === "whatsapp" && (
+        <WhatsAppConnectionTab tenantPhone={tenant?.telefoneContato || ""} />
+      )}
+
+      {/* TAB: DADOS DA EMPRESA (EDITÁVEIS) */}
+      {activeTab === "empresa" && (
+        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-sm font-bold text-ink flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-primary" />
+                <span>Dados Cadastrais da Oficina</span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Atualize as informações que aparecem nas suas notas fiscais e relatórios. O CNPJ é protegido fiscalmente.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveCompany} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Razão Social *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={companyForm.razaoSocial}
+                  onChange={(e) => setCompanyForm({ ...companyForm, razaoSocial: e.target.value })}
+                  placeholder="Nome empresarial conforme cartão CNPJ"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-ink focus:bg-white focus:border-primary transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nome Fantasia
+                </label>
+                <input
+                  type="text"
+                  value={companyForm.nomeFantasia}
+                  onChange={(e) => setCompanyForm({ ...companyForm, nomeFantasia: e.target.value })}
+                  placeholder="Nome comercial da sua oficina"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-ink focus:bg-white focus:border-primary transition-all"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    CNPJ (Chave Fiscal Primária)
+                  </label>
+                  <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                    <Lock className="w-3 h-3 text-slate-400" />
+                    Bloqueado
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  disabled
+                  value={companyForm.cnpj}
+                  className="w-full px-3.5 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-500 cursor-not-allowed"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Para alterar o CNPJ emissor, entre em contato com o suporte técnico.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Inscrição Estadual (IE) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={companyForm.inscricaoEstadual}
+                  onChange={(e) => setCompanyForm({ ...companyForm, inscricaoEstadual: e.target.value })}
+                  placeholder="Ex: 254.123.456 ou ISENTO"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-ink font-mono focus:bg-white focus:border-primary transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  E-mail Principal da Empresa *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={companyForm.emailPrincipal}
+                  onChange={(e) => setCompanyForm({ ...companyForm, emailPrincipal: e.target.value })}
+                  placeholder="contato@minhaoficina.com.br"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-ink focus:bg-white focus:border-primary transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Telefone / WhatsApp de Contato *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={companyForm.telefoneContato}
+                  onChange={(e) => setCompanyForm({ ...companyForm, telefoneContato: e.target.value })}
+                  placeholder="(48) 9185-2757"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-ink focus:bg-white focus:border-primary transition-all"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Número utilizado para as comunicações e faturas do sistema.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-4 border-t border-slate-100">
+              <button
+                type="submit"
+                disabled={savingCompany}
+                className="px-6 py-2.5 rounded-xl bg-primary hover:bg-primaryDark text-white text-xs font-bold shadow-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-60"
+              >
+                {savingCompany ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span>Salvar Alterações da Empresa</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* TAB: DESTINATÁRIOS */}
       {activeTab === "contatos" && (
         <div className="space-y-6">
           {/* Form de adicionar */}
@@ -413,7 +616,7 @@ export default function ConfiguracoesPage() {
         </div>
       )}
 
-      {/* TAB 2: REGRAS DE CFOP */}
+      {/* TAB: REGRAS DE CFOP */}
       {activeTab === "cfop" && (
         <div className="space-y-6">
           <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -533,7 +736,7 @@ export default function ConfiguracoesPage() {
         </div>
       )}
 
-      {/* TAB 3: PARÂMETROS FISCAIS */}
+      {/* TAB: PARÂMETROS FISCAIS */}
       {activeTab === "fiscal" && (
         <div className="space-y-6">
           <form onSubmit={handleSaveFiscal} className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
@@ -605,49 +808,7 @@ export default function ConfiguracoesPage() {
         </div>
       )}
 
-      {/* TAB 4: DADOS CADASTRAIS */}
-      {activeTab === "empresa" && (
-        <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4 text-xs">
-          <h2 className="text-sm font-bold text-ink flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-primary" />
-            <span>Dados da Empresa Cadastrada</span>
-          </h2>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-[10px] uppercase font-bold text-slate-400">Razão Social</span>
-              <p className="font-bold text-ink mt-0.5">{tenant?.razaoSocial}</p>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-[10px] uppercase font-bold text-slate-400">Nome Fantasia</span>
-              <p className="font-bold text-ink mt-0.5">{tenant?.nomeFantasia || "-"}</p>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-[10px] uppercase font-bold text-slate-400">CNPJ</span>
-              <p className="font-mono font-bold text-ink mt-0.5">{tenant?.cnpj}</p>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-[10px] uppercase font-bold text-slate-400">Inscrição Estadual</span>
-              <p className="font-mono font-bold text-ink mt-0.5">{tenant?.inscricaoEstadual}</p>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-[10px] uppercase font-bold text-slate-400">E-mail Principal</span>
-              <p className="font-semibold text-ink mt-0.5">{tenant?.emailPrincipal}</p>
-            </div>
-
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-[10px] uppercase font-bold text-slate-400">Telefone</span>
-              <p className="font-semibold text-ink mt-0.5">{tenant?.telefoneContato}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 5: INTEGRAÇÃO FOCUS NFE */}
+      {/* TAB: INTEGRAÇÃO FOCUS NFE */}
       {activeTab === "tokens" && (
         <FiscalIntegrationTab
           tenant={tenant}
@@ -658,5 +819,19 @@ export default function ConfiguracoesPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function ConfiguracoesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[50vh] flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      }
+    >
+      <ConfiguracoesContent />
+    </Suspense>
   );
 }
