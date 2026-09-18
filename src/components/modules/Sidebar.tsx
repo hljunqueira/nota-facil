@@ -3,13 +3,16 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 import {
   LayoutDashboard,
   FileText,
   Building2,
   FolderArchive,
-  Settings,
+  CreditCard,
   History,
+  Settings,
+  LogOut,
 } from "lucide-react";
 
 const navigationItems = [
@@ -34,6 +37,11 @@ const navigationItems = [
     icon: FolderArchive,
   },
   {
+    name: "Assinatura",
+    href: "/assinatura",
+    icon: CreditCard,
+  },
+  {
     name: "Logs",
     href: "/logs",
     icon: History,
@@ -45,14 +53,28 @@ const navigationItems = [
   },
 ];
 
+// Itens principais exibidos na barra inferior mobile
+const mobileItems = [
+  { name: "Início", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Notas", href: "/notas", icon: FileText },
+  { name: "Parceiros", href: "/parceiros", icon: Building2 },
+  { name: "Fechamento", href: "/fechamento", icon: FolderArchive },
+  { name: "Assinatura", href: "/assinatura", icon: CreditCard },
+  { name: "Ajustes", href: "/configuracoes", icon: Settings },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
+
+  const handleSignOut = () => {
+    signOut({ callbackUrl: "/login" });
+  };
 
   return (
     <>
       {/* Sidebar para Desktop */}
-      <aside className="hidden md:flex w-64 flex-col border-r border-slate-200 bg-white min-h-[calc(100vh-4rem)] p-4">
-        <div className="space-y-1">
+      <aside className="hidden md:flex w-60 flex-col border-r border-slate-200 bg-white min-h-[calc(100vh-3.5rem)] p-3">
+        <nav className="space-y-0.5" aria-label="Menu Principal">
           {navigationItems.map((item) => {
             const isActive =
               item.href === "/dashboard"
@@ -63,34 +85,42 @@ export function Sidebar() {
               <Link
                 key={item.name}
                 href={item.href}
-                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-colors ${
                   isActive
-                    ? "bg-primary text-white shadow-sm font-semibold"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-ink"
+                    ? "bg-slate-100 text-slate-900 font-semibold"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                 }`}
               >
                 <item.icon
-                  className={`h-5 w-5 ${
-                    isActive ? "text-white" : "text-slate-500"
+                  className={`h-4 w-4 shrink-0 ${
+                    isActive ? "text-slate-900" : "text-slate-400"
                   }`}
                 />
                 <span>{item.name}</span>
               </Link>
             );
           })}
-        </div>
+        </nav>
 
-        {/* Rodapé da Sidebar */}
-        <div className="mt-auto pt-6 border-t border-slate-100 text-center">
-          <p className="text-[11px] text-slate-400 font-medium">
-            Nota Fácil v1.0 • PWA Ativo
-          </p>
+        {/* Rodapé da Sidebar Desktop com Botão de Sair */}
+        <div className="mt-auto pt-3 border-t border-slate-100">
+          <button
+            onClick={handleSignOut}
+            type="button"
+            className="flex items-center gap-2.5 w-full px-3 py-2 rounded-md text-xs font-medium text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+          >
+            <LogOut className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-rose-600" />
+            <span>Sair da conta</span>
+          </button>
         </div>
       </aside>
 
-      {/* Barra Inferior Fixa para Celular (Mobile First / PWA) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex h-16 w-full items-center justify-around border-t border-slate-200 bg-white/95 px-2 backdrop-blur">
-        {navigationItems.map((item) => {
+      {/* Barra Inferior Fixa para Mobile */}
+      <nav
+        aria-label="Navegação Mobile"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex h-14 w-full items-center justify-around border-t border-slate-200 bg-white px-1"
+      >
+        {mobileItems.map((item) => {
           const isActive =
             item.href === "/dashboard"
               ? pathname === "/dashboard"
@@ -100,21 +130,32 @@ export function Sidebar() {
             <Link
               key={item.name}
               href={item.href}
-              className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-[11px] font-medium transition-colors ${
+              className={`flex flex-col items-center justify-center flex-1 h-full py-1 text-[10px] transition-colors ${
                 isActive
-                  ? "text-primaryDark font-bold"
-                  : "text-slate-500 hover:text-ink"
+                  ? "text-slate-900 font-semibold"
+                  : "text-slate-400 hover:text-slate-600"
               }`}
             >
               <item.icon
-                className={`h-5 w-5 mb-0.5 ${
-                  isActive ? "text-primary" : "text-slate-400"
+                className={`h-4 w-4 mb-1 ${
+                  isActive ? "text-slate-900" : "text-slate-400"
                 }`}
               />
-              <span className="truncate max-w-[64px]">{item.name}</span>
+              <span className="truncate">{item.name}</span>
             </Link>
           );
         })}
+
+        {/* Botão Sair no Mobile */}
+        <button
+          onClick={handleSignOut}
+          type="button"
+          aria-label="Sair"
+          className="flex flex-col items-center justify-center flex-1 h-full py-1 text-[10px] text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+        >
+          <LogOut className="h-4 w-4 mb-1 text-slate-400" />
+          <span className="truncate">Sair</span>
+        </button>
       </nav>
     </>
   );

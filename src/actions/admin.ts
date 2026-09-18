@@ -660,3 +660,206 @@ export async function updateTenantTokensAdminAction(
   }
 }
 
+/**
+ * Define o plano comercial da oficina (PARCERIA ou FLEX)
+ */
+export async function updateTenantPlanAction(
+  tenantId: string,
+  plano: "PARCERIA" | "FLEX"
+) {
+  const session = await requireAdminSession();
+
+  try {
+    const updated = await prismaAdmin.$transaction(async (tx) => {
+      const t = await (tx.tenant as any).update({
+        where: { id: tenantId },
+        data: { plano },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          actorType: "ADMIN",
+          actorId: session.user.id,
+          acao: "ALTERACAO_PLANO_TENANT",
+          entidade: "Tenant",
+          entidadeId: tenantId,
+          detalhe: {
+            adminEmail: session.user.email,
+            novoPlano: plano,
+          },
+        },
+      });
+
+      return t;
+    });
+
+    revalidatePath("/admin/tenants");
+    revalidatePath("/assinatura");
+    return { success: true, plano: (updated as any)?.plano || plano };
+  } catch (err: any) {
+    console.error("[updateTenantPlanAction] Erro:", err);
+    return { success: false, error: err.message || "Erro ao definir plano da oficina." };
+  }
+}
+
+/**
+ * Obtém os dados completos de uma oficina para o Modal Central de Gestão
+ */
+export async function getTenantFullDetailsAction(tenantId: string) {
+  await requireAdminSession();
+
+  const tenant = await (prismaAdmin.tenant as any).findUnique({
+    where: { id: tenantId },
+    include: {
+      users: { select: { id: true, nome: true, email: true, createdAt: true } },
+      _count: { select: { invoices: true, partners: true } },
+    },
+  });
+
+  if (!tenant) {
+    throw new Error("Oficina não encontrada.");
+  }
+
+  let payments: any[] = [];
+  if (tenant.asaasSubscriptionId) {
+    const { getAsaasSubscriptionPayments } = await import("@/lib/services/asaas");
+    payments = await getAsaasSubscriptionPayments(tenant.asaasSubscriptionId);
+  }
+
+  return {
+    ...tenant,
+    diaVencimento: tenant.diaVencimento || 10,
+    plano: tenant.plano || "PARCERIA",
+    payments,
+    totalNotas: tenant._count?.invoices || 0,
+    totalParceiros: tenant._count?.partners || 0,
+  };
+}
+
+/**
+ * Sincroniza / cria assinatura no Asaas com o dia de vencimento desejado
+ */
+export async function syncTenantAsaasAction(
+  tenantId: string,
+  diaVencimento: number = 10
+) {
+  const session = await requireAdminSession();
+
+  try {
+    const { createOrUpdateAsaasSubscription } = await import("@/lib/services/asaas");
+
+    const tenant = await (prismaAdmin.tenant as any).findUnique({
+      where: { id: tenantId },
+    });
+
+    if (!tenant) {
+      throw new Error("Oficina não encontrada.");
+    }
+
+    const plano = (tenant.plano || "PARCERIA") as "PARCERIA" | "FLEX";
+    const res = await createOrUpdateAsaasSubscription(tenantId, diaVencimento, plano);
+
+    await prismaAdmin.auditLog.create({
+      data: {
+        tenantId,
+        actorType: "ADMIN",
+        actorId: session.user.id,
+        acao: "SINCRONIZACAO_ASSINATURA_ASAAS",
+        entidade: "Tenant",
+        entidadeId: tenantId,
+        detalhe: {
+          adminEmail: session.user.email,
+          diaVencimento,
+          plano,
+          subscriptionId: res.subscriptionId,
+          customerId: res.customerId,
+          nextDueDate: res.nextDueDate,
+          valor: res.valor,
+        },
+      },
+    });
+
+    revalidatePath("/admin/tenants");
+    revalidatePath("/assinatura");
+    return res;
+  } catch (err: any) {
+    console.error("[syncTenantAsaasAction] Erro:", err);
+    return { success: false as const, error: err.message || "Falha ao sincronizar assinatura no Asaas." };
+  }
+}
+
+/**
+ * Atualiza dados cadastrais, financeiros e tributários da oficina
+ */
+export async function updateTenantManagementAction(
+  tenantId: string,
+  data: {
+    razaoSocial?: string;
+    nomeFantasia?: string;
+    cnpj?: string;
+    inscricaoEstadual?: string;
+    emailPrincipal?: string;
+    telefoneContato?: string;
+    diaVencimento?: number;
+    statusConta?: StatusConta;
+    plano?: "PARCERIA" | "FLEX";
+    ambiente?: AmbienteFiscal;
+    focusNfeTokenProducao?: string | null;
+    focusNfeTokenHomologacao?: string | null;
+    focusNfeIdEmpresa?: number | null;
+  }
+) {
+  const session = await requireAdminSession();
+
+  try {
+    const updateData: any = {};
+
+    if (data.razaoSocial !== undefined) updateData.razaoSocial = data.razaoSocial.trim();
+    if (data.nomeFantasia !== undefined) updateData.nomeFantasia = data.nomeFantasia ? data.nomeFantasia.trim() : null;
+    if (data.cnpj !== undefined) updateData.cnpj = data.cnpj.replace(/\D/g, "");
+    if (data.inscricaoEstadual !== undefined) updateData.inscricaoEstadual = data.inscricaoEstadual.trim();
+    if (data.emailPrincipal !== undefined) updateData.emailPrincipal = data.emailPrincipal.toLowerCase().trim();
+    if (data.telefoneContato !== undefined) updateData.telefoneContato = data.telefoneContato.trim();
+    if (data.diaVencimento !== undefined) updateData.diaVencimento = Number(data.diaVencimento);
+    if (data.statusConta !== undefined) updateData.statusConta = data.statusConta;
+    if (data.plano !== undefined) updateData.plano = data.plano;
+    if (data.ambiente !== undefined) updateData.ambiente = data.ambiente;
+    if (data.focusNfeTokenProducao !== undefined) updateData.focusNfeTokenProducao = data.focusNfeTokenProducao ? data.focusNfeTokenProducao.trim() : null;
+    if (data.focusNfeTokenHomologacao !== undefined) updateData.focusNfeTokenHomologacao = data.focusNfeTokenHomologacao ? data.focusNfeTokenHomologacao.trim() : null;
+    if (data.focusNfeIdEmpresa !== undefined) updateData.focusNfeIdEmpresa = data.focusNfeIdEmpresa ? Number(data.focusNfeIdEmpresa) : null;
+
+    const updated = await prismaAdmin.$transaction(async (tx) => {
+      const t = await (tx.tenant as any).update({
+        where: { id: tenantId },
+        data: updateData,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          actorType: "ADMIN",
+          actorId: session.user.id,
+          acao: "ATUALIZACAO_CADASTRO_COMPLETO_ADMIN",
+          entidade: "Tenant",
+          entidadeId: tenantId,
+          detalhe: {
+            adminEmail: session.user.email,
+            camposAtualizados: Object.keys(updateData),
+          },
+        },
+      });
+
+      return t;
+    });
+
+    revalidatePath("/admin/tenants");
+    revalidatePath("/assinatura");
+    return { success: true, tenant: updated };
+  } catch (err: any) {
+    console.error("[updateTenantManagementAction] Erro:", err);
+    return { success: false, error: err.message || "Erro ao salvar alterações da oficina." };
+  }
+}
+
+

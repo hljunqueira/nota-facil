@@ -74,6 +74,10 @@ model Tenant {
   proximoNumero             Int             @default(1)
   asaasCustomerId           String?
   asaasSubscriptionId       String?
+  plano                     String          @default("PARCERIA")
+  diaVencimento             Int             @default(10)
+  fidelidadeMeses           Int             @default(24)
+  fidelidadeInicio          DateTime?
   createdAt                 DateTime        @default(now())
   updatedAt                 DateTime        @updatedAt
 

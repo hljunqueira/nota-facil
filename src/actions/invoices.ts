@@ -223,6 +223,21 @@ export async function executeInversionAction({
     return { success: false, error: "Oficina não encontrada." };
   }
 
+  if (tenant.statusConta === "SUSPENSO_PAGAMENTO") {
+    return {
+      success: false,
+      error:
+        "Emissão fiscal suspensa por pendência financeira. Acesse o menu Minha Assinatura para regularizar sua mensalidade.",
+    };
+  }
+
+  if (tenant.statusConta === "SUSPENSO_ADMIN") {
+    return {
+      success: false,
+      error: "Emissão fiscal bloqueada por suspensão administrativa da conta.",
+    };
+  }
+
   const invoiceEntrada = await tenantPrisma.invoice.findUnique({
     where: { id: invoiceEntradaId },
     include: { partner: true },

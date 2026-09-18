@@ -103,11 +103,7 @@ export async function middleware(req: NextRequest) {
   // 5. Regras no domínio principal (appnotafacil.online)
   // Raiz "/" (Landing Page pública)
   if (pathname === "/") {
-    if (token) {
-      if (token.role === "ADMIN") {
-        const targetHost = process.env.NODE_ENV === "production" ? "admin.appnotafacil.online" : host;
-        return NextResponse.redirect(new URL("/admin", `https://${targetHost}`));
-      }
+    if (token && token.role === "TENANT") {
       return NextResponse.redirect(new URL("/dashboard", req.url));
     }
     return NextResponse.next();
@@ -115,26 +111,18 @@ export async function middleware(req: NextRequest) {
 
   // Páginas públicas (/login e /cadastro)
   if (pathname === "/login" || pathname === "/cadastro") {
-    if (token) {
-      if (token.role === "ADMIN") {
-        const targetHost = process.env.NODE_ENV === "production" ? "admin.appnotafacil.online" : host;
-        return NextResponse.redirect(new URL("/admin", `https://${targetHost}`));
-      }
+    if (token && token.role === "TENANT") {
       return NextResponse.redirect(new URL("/dashboard", req.url));
     }
+    // Se for ADMIN ou não autenticado, permite ver a tela de login/cadastro de assinantes
     return NextResponse.next();
   }
 
-  // Rotas autenticadas do tenant (/dashboard, /notas, /parceiros, etc.)
-  if (!token) {
+  // Rotas autenticadas do tenant (/dashboard, /notas, /parceiros, /assinatura, etc.)
+  if (!token || token.role !== "TENANT") {
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
-  }
-
-  if (token.role === "ADMIN") {
-    const targetHost = process.env.NODE_ENV === "production" ? "admin.appnotafacil.online" : host;
-    return NextResponse.redirect(new URL("/admin", `https://${targetHost}`));
   }
 
   return NextResponse.next();

@@ -21,10 +21,6 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: process.env.NODE_ENV === "production",
-        domain:
-          process.env.NODE_ENV === "production"
-            ? ".appnotafacil.online"
-            : undefined,
       },
     },
   },
@@ -38,7 +34,7 @@ export const authOptions: NextAuthOptions = {
         email: { label: "E-mail", type: "email" },
         senha: { label: "Senha", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         const rawEmail = (credentials as any)?.email;
         const rawSenha = (credentials as any)?.senha || (credentials as any)?.password;
 
@@ -50,7 +46,43 @@ export const authOptions: NextAuthOptions = {
         const { email, senha } = parsed.data;
         const cleanInput = email.toLowerCase().trim();
 
-        // 1. Tenta autenticar como usuário de Tenant
+        // Identifica se a requisição partiu do subdomínio admin
+        const hostHeader = (req as any)?.headers?.host || (req as any)?.headers?.["x-forwarded-host"] || "";
+        const isAdminPortal = typeof hostHeader === "string" && hostHeader.startsWith("admin.");
+
+        // Se estiver no portal administrativo, apenas administradores podem logar
+        if (isAdminPortal) {
+          const adminUser = await prismaAdmin.platformAdmin.findFirst({
+            where: {
+              OR: [
+                { email: { equals: cleanInput, mode: "insensitive" } },
+                { nome: { equals: cleanInput, mode: "insensitive" } },
+                ...(cleanInput === "admin" || cleanInput === "henrique" || cleanInput === "hljunqueira"
+                  ? [{ nome: { contains: "Henrique", mode: "insensitive" as const } }]
+                  : []),
+              ],
+            },
+          });
+
+          if (!adminUser) {
+            return null;
+          }
+
+          const isValid = await bcrypt.compare(senha, adminUser.senhaHash);
+          if (!isValid) return null;
+
+          return {
+            id: adminUser.id,
+            email: adminUser.email,
+            name: adminUser.nome,
+            role: "ADMIN",
+            tenantId: null,
+            tenantName: "Administrador da Plataforma",
+            ambiente: null,
+          };
+        }
+
+        // Se estiver no portal principal (appnotafacil.online), autentica ESTRITAMENTE assinantes (TENANT)
         const tenantUser = await prismaAdmin.user.findFirst({
           where: { email: { equals: cleanInput, mode: "insensitive" } },
           include: { tenant: true },
@@ -74,12 +106,9 @@ export const authOptions: NextAuthOptions = {
             );
           }
 
-          // 1.3 Se a conta do tenant estiver suspensa, impede o login
-          if (
-            tenantUser.tenant?.statusConta === "SUSPENSO_ADMIN" ||
-            tenantUser.tenant?.statusConta === "SUSPENSO_PAGAMENTO"
-          ) {
-            throw new Error("CONTA_SUSPENSA");
+          // 1.3 Se a conta do tenant tiver bloqueio administrativo rígido
+          if (tenantUser.tenant?.statusConta === "SUSPENSO_ADMIN") {
+            throw new Error("CONTA_SUSPENSA_ADMIN");
           }
 
           return {
@@ -93,35 +122,22 @@ export const authOptions: NextAuthOptions = {
               tenantUser.tenant?.razaoSocial ||
               "Oficina",
             ambiente: tenantUser.tenant?.ambiente ?? "HOMOLOGACAO",
+            statusConta: tenantUser.tenant?.statusConta ?? "ATIVO",
           };
         }
 
-        // 2. Se não encontrou no Tenant, tenta autenticar como PlatformAdmin
-        const adminUser = await prismaAdmin.platformAdmin.findFirst({
+        // Se uma conta de admin tentar logar no portal dos assinantes, rejeita com erro informativo
+        const isActuallyAdmin = await prismaAdmin.platformAdmin.findFirst({
           where: {
             OR: [
               { email: { equals: cleanInput, mode: "insensitive" } },
               { nome: { equals: cleanInput, mode: "insensitive" } },
-              ...(cleanInput === "admin" || cleanInput === "henrique" || cleanInput === "hljunqueira"
-                ? [{ nome: { contains: "Henrique", mode: "insensitive" as const } }]
-                : []),
             ],
           },
         });
 
-        if (adminUser) {
-          const isValid = await bcrypt.compare(senha, adminUser.senhaHash);
-          if (!isValid) return null;
-
-          return {
-            id: adminUser.id,
-            email: adminUser.email,
-            name: adminUser.nome,
-            role: "ADMIN",
-            tenantId: null,
-            tenantName: "Administrador da Plataforma",
-            ambiente: null,
-          };
+        if (isActuallyAdmin) {
+          throw new Error("CONTA_ADMINISTRADOR_NO_CLIENTE");
         }
 
         return null;
@@ -136,6 +152,7 @@ export const authOptions: NextAuthOptions = {
         token.tenantId = user.tenantId;
         token.tenantName = user.tenantName;
         token.ambiente = user.ambiente;
+        token.statusConta = (user as any).statusConta;
       }
       return token;
     },
@@ -146,6 +163,7 @@ export const authOptions: NextAuthOptions = {
         session.user.tenantId = token.tenantId as string | null;
         session.user.tenantName = token.tenantName as string | null;
         session.user.ambiente = (token.ambiente as any) ?? null;
+        (session.user as any).statusConta = (token.statusConta as any) ?? null;
       }
       return session;
     },

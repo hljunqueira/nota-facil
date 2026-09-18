@@ -14,12 +14,18 @@ import {
   RefreshCw,
   ExternalLink,
   KeyRound,
+  SlidersHorizontal,
 } from "lucide-react";
-import { getAllTenantsAction, toggleFiscalEnvironmentAction } from "@/actions/admin";
+import {
+  getAllTenantsAction,
+  toggleFiscalEnvironmentAction,
+  updateTenantPlanAction,
+} from "@/actions/admin";
 import { UploadCertificateModal } from "@/components/modules/admin/UploadCertificateModal";
 import { RegisterFocusModal } from "@/components/modules/admin/RegisterFocusModal";
 import { ResetPasswordModal } from "@/components/modules/admin/ResetPasswordModal";
 import { EditTenantTokensModal } from "@/components/modules/admin/EditTenantTokensModal";
+import { TenantManagementModal } from "@/components/modules/admin/TenantManagementModal";
 
 export default function AdminTenantsPage() {
   const [tenants, setTenants] = useState<any[]>([]);
@@ -28,6 +34,7 @@ export default function AdminTenantsPage() {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const [selectedManageTenantId, setSelectedManageTenantId] = useState<string | null>(null);
   const [selectedCertTenant, setSelectedCertTenant] = useState<any | null>(null);
   const [selectedFocusTenant, setSelectedFocusTenant] = useState<any | null>(null);
   const [selectedResetTenant, setSelectedResetTenant] = useState<any | null>(null);
@@ -68,6 +75,24 @@ export default function AdminTenantsPage() {
     }
   };
 
+  const handleUpdatePlan = async (tenantId: string, plano: "PARCERIA" | "FLEX") => {
+    try {
+      const res = await updateTenantPlanAction(tenantId, plano);
+      if (res.success) {
+        setToastMessage(
+          `Plano atualizado para ${
+            plano === "PARCERIA" ? "Plano Parceria (24 meses)" : "Plano Flex (Sem fidelidade)"
+          }!`
+        );
+        loadTenants();
+      } else {
+        alert(res.error || "Erro ao atualizar plano.");
+      }
+    } catch {
+      alert("Erro ao conectar com o servidor.");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -99,37 +124,36 @@ export default function AdminTenantsPage() {
           </div>
           <button
             onClick={() => setToastMessage(null)}
-            className="text-emerald-700 font-bold hover:underline"
+            className="text-emerald-700 hover:text-emerald-900 font-bold"
           >
-            Fechar
+            ✕
           </button>
         </div>
       )}
 
-      {/* Barra de Filtros e Busca */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <form onSubmit={handleSearchSubmit} className="flex-1 relative">
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-            <Search className="h-4 w-4" />
-          </div>
+      {/* Barra de Filtros */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+        <form onSubmit={handleSearchSubmit} className="relative w-full sm:w-96">
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
+            placeholder="Buscar por Razão Social, CNPJ ou E-mail..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por Razão Social, Nome Fantasia, CNPJ ou E-mail..."
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-ink placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-xs"
+            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-ink placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
           />
         </form>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary shadow-xs cursor-pointer"
+            className="w-full sm:w-auto px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
           >
-            <option value="ALL">Todos os Status</option>
-            <option value="PENDENTE_ANALISE">Pendente Análise</option>
+            <option value="ALL">Todos os Cadastros</option>
             <option value="APROVADO">Aprovados</option>
+            <option value="PENDENTE_ANALISE">Pendentes de Análise</option>
             <option value="REJEITADO">Rejeitados</option>
           </select>
         </div>
@@ -157,6 +181,7 @@ export default function AdminTenantsPage() {
                 <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   <th className="py-3.5 px-4">Oficina / Razão Social</th>
                   <th className="py-3.5 px-4">CNPJ & IE</th>
+                  <th className="py-3.5 px-4">Plano Comercial</th>
                   <th className="py-3.5 px-4">Status Cadastro</th>
                   <th className="py-3.5 px-4">Ambiente Fiscal</th>
                   <th className="py-3.5 px-4">Focus NFe & Tokens</th>
@@ -168,7 +193,15 @@ export default function AdminTenantsPage() {
                 {tenants.map((t) => (
                   <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="py-3.5 px-4">
-                      <div className="font-bold text-ink">{t.razaoSocial}</div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedManageTenantId(t.id)}
+                        className="text-left font-bold text-ink hover:text-primary transition-colors cursor-pointer group flex items-center gap-1.5"
+                        title="Clique para abrir a Central de Gestão desta oficina"
+                      >
+                        <span>{t.razaoSocial}</span>
+                        <ExternalLink className="w-3 h-3 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </button>
                       <div className="text-[11px] text-slate-400">
                         {t.nomeFantasia || t.emailPrincipal}
                       </div>
@@ -177,6 +210,28 @@ export default function AdminTenantsPage() {
                     <td className="py-3.5 px-4 font-mono text-[11px]">
                       <div>{t.cnpj}</div>
                       <div className="text-slate-400">IE: {t.inscricaoEstadual}</div>
+                    </td>
+
+                    <td className="py-3.5 px-4">
+                      <select
+                        value={t.plano || "PARCERIA"}
+                        onChange={(e) =>
+                          handleUpdatePlan(t.id, e.target.value as "PARCERIA" | "FLEX")
+                        }
+                        className={`text-xs font-semibold px-2 py-1 rounded border cursor-pointer ${
+                          (t.plano || "PARCERIA") === "PARCERIA"
+                            ? "bg-slate-900 text-white border-slate-800"
+                            : "bg-slate-100 text-slate-800 border-slate-300"
+                        }`}
+                        title="Definir plano comercial desta oficina"
+                      >
+                        <option value="PARCERIA" className="bg-white text-slate-900">
+                          Parceria (24m)
+                        </option>
+                        <option value="FLEX" className="bg-white text-slate-900">
+                          Flex (Sem fid.)
+                        </option>
+                      </select>
                     </td>
 
                     <td className="py-3.5 px-4">
@@ -263,6 +318,15 @@ export default function AdminTenantsPage() {
 
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedManageTenantId(t.id)}
+                          className="px-2.5 py-1 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-[11px] font-semibold transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                          title="Abrir Central de Gestão Completa (4 Grids)"
+                        >
+                          <SlidersHorizontal className="w-3 h-3 text-amber-400" />
+                          <span>Gerenciar</span>
+                        </button>
                         {t.users && t.users.length > 0 && (
                           <button
                             onClick={() => {
@@ -309,6 +373,17 @@ export default function AdminTenantsPage() {
           </div>
         </div>
       )}
+
+      {/* Modal Central de Gestão Completa (4 Grids) */}
+      <TenantManagementModal
+        tenantId={selectedManageTenantId}
+        isOpen={!!selectedManageTenantId}
+        onClose={() => setSelectedManageTenantId(null)}
+        onSuccess={() => {
+          setToastMessage("Dados da oficina atualizados com sucesso!");
+          loadTenants();
+        }}
+      />
 
       <UploadCertificateModal
         tenant={selectedCertTenant}

@@ -1,0 +1,96 @@
+"use server";
+
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prismaAdmin } from "@/lib/prismaAdmin";
+
+export interface SubscriptionPayment {
+  id: string;
+  valor: number;
+  vencimento: string;
+  status: string;
+  billingType: string;
+  invoiceUrl: string | null;
+  dataPagamento: string | null;
+}
+
+export interface SubscriptionInfo {
+  id: string;
+  razaoSocial: string;
+  nomeFantasia: string | null;
+  cnpj: string;
+  emailPrincipal: string;
+  telefoneContato: string;
+  statusConta: string;
+  statusCadastro: string;
+  ambiente: string;
+  createdAt: string;
+  asaasCustomerId: string | null;
+  asaasSubscriptionId: string | null;
+  plano: string;
+  diaVencimento: number;
+  payments: SubscriptionPayment[];
+}
+
+export async function getSubscriptionInfoAction(): Promise<SubscriptionInfo> {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user?.tenantId) {
+    throw new Error("Não autenticado ou sessão de oficina inválida.");
+  }
+
+  const tenant = await (prismaAdmin.tenant as any).findUnique({
+    where: { id: session.user.tenantId },
+    select: {
+      id: true,
+      razaoSocial: true,
+      nomeFantasia: true,
+      cnpj: true,
+      emailPrincipal: true,
+      telefoneContato: true,
+      statusConta: true,
+      statusCadastro: true,
+      ambiente: true,
+      createdAt: true,
+      asaasCustomerId: true,
+      asaasSubscriptionId: true,
+      plano: true,
+      diaVencimento: true,
+    },
+  });
+
+  if (!tenant) {
+    throw new Error("Oficina não encontrada no sistema.");
+  }
+
+  let payments: SubscriptionPayment[] = [];
+  if (tenant.asaasSubscriptionId) {
+    try {
+      const { getAsaasSubscriptionPayments } = await import("@/lib/services/asaas");
+      payments = await getAsaasSubscriptionPayments(tenant.asaasSubscriptionId);
+    } catch (err) {
+      console.error("[getSubscriptionInfoAction] Erro ao buscar pagamentos:", err);
+    }
+  }
+
+  return {
+    ...tenant,
+    plano: tenant.plano || "PARCERIA",
+    diaVencimento: tenant.diaVencimento || 10,
+    createdAt: tenant.createdAt.toISOString(),
+    payments,
+  };
+}
+
+/**
+ * Obtém o QR Code e código Copia e Cola Pix para a fatura selecionada
+ */
+export async function getPaymentPixAction(paymentId: string) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.tenantId) {
+    throw new Error("Não autorizado.");
+  }
+
+  const { getAsaasPaymentPix } = await import("@/lib/services/asaas");
+  return getAsaasPaymentPix(paymentId);
+}

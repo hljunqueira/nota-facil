@@ -36,13 +36,17 @@ function LoginForm() {
           setErrorMessage(
             "Seu cadastro está em análise pela equipe administrativa. Nossa equipe entrará em contato via WhatsApp e e-mail assim que sua conta for ativada."
           );
+        } else if (res?.error === "CONTA_ADMINISTRADOR_NO_CLIENTE") {
+          setErrorMessage(
+            "Esta conta é de Administrador da Plataforma. Para gerenciar o sistema, acesse o portal administrativo em admin.appnotafacil.online."
+          );
         } else if (res?.error?.startsWith("CADASTRO_REJEITADO")) {
           const motivo = res.error.includes(":") ? res.error.split(":")[1] : "";
           setErrorMessage(
             `Cadastro não aprovado${motivo ? `: ${motivo}` : ""}. Entre em contato com o suporte para regularizar seus dados.`
           );
-        } else if (res?.error === "CONTA_SUSPENSA") {
-          setErrorMessage("Sua conta está temporariamente suspensa. Entre em contato com o suporte.");
+        } else if (res?.error === "CONTA_SUSPENSA" || res?.error === "CONTA_SUSPENSA_ADMIN") {
+          setErrorMessage("Sua conta possui bloqueio administrativo. Entre em contato com o suporte da plataforma.");
         } else if (res?.error === "CredentialsSignin") {
           setErrorMessage("E-mail ou senha incorretos. Verifique suas credenciais.");
         } else {
