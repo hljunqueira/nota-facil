@@ -10,7 +10,6 @@ import {
   Building2,
   FolderArchive,
   CreditCard,
-  History,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -40,11 +39,6 @@ const navigationItems = [
     name: "Assinatura",
     href: "/assinatura",
     icon: CreditCard,
-  },
-  {
-    name: "Logs",
-    href: "/logs",
-    icon: History,
   },
   {
     name: "Configurações",

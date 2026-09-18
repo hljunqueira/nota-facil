@@ -8,7 +8,7 @@ import { signOut, useSession } from "next-auth/react";
 import {
   Users,
   CheckCircle2,
-  Sliders,
+  History,
   LogOut,
   LayoutDashboard,
   ExternalLink,
@@ -31,7 +31,7 @@ export default function AdminLayout({
     { name: "Visão Geral", href: "/admin", icon: LayoutDashboard },
     { name: "Oficinas & Clientes", href: "/admin/tenants", icon: Users },
     { name: "Fila de Aprovação", href: "/admin/aprovacoes", icon: CheckCircle2 },
-    { name: "Configurações Master", href: "/admin/configuracoes", icon: Sliders },
+    { name: "Logs & Auditoria", href: "/admin/logs", icon: History },
   ];
 
   const handleSignOut = () => {
@@ -73,7 +73,7 @@ export default function AdminLayout({
           </Link>
 
           <div className="flex items-center gap-3 pl-3 border-l border-slate-200">
-            <div className="hidden md:flex flex-col text-right">
+            <div className="flex flex-col text-right">
               <span className="text-xs font-medium text-slate-800 leading-tight">
                 {session?.user?.name || "Administrador"}
               </span>
@@ -81,15 +81,6 @@ export default function AdminLayout({
                 {session?.user?.email}
               </span>
             </div>
-            <button
-              onClick={handleSignOut}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:text-rose-600 hover:bg-slate-100 transition-colors cursor-pointer"
-              title="Sair do painel administrativo"
-              type="button"
-              aria-label="Sair"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
           </div>
         </div>
       </header>

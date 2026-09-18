@@ -120,3 +120,124 @@ export async function getTenantLogsAction(params?: {
     },
   };
 }
+
+/**
+ * Consulta logs de auditoria de todo o ecossistema para o Administrador Master
+ */
+export async function getAdminLogsAction(params?: {
+  page?: number;
+  limit?: number;
+  categoria?: LogCategory;
+  search?: string;
+  tenantId?: string;
+}) {
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user || session.user.role !== "ADMIN") {
+    throw new Error("Acesso restrito ao Administrador Master.");
+  }
+
+  const page = Math.max(1, params?.page || 1);
+  const limit = Math.min(100, Math.max(5, params?.limit || 20));
+  const skip = (page - 1) * limit;
+  const categoria = params?.categoria || "todas";
+  const search = params?.search?.trim() || "";
+  const filterTenantId = params?.tenantId && params.tenantId !== "todos" ? params.tenantId : undefined;
+
+  const where: any = {};
+
+  if (filterTenantId) {
+    where.tenantId = filterTenantId;
+  }
+
+  if (categoria !== "todas" && categoryAcoesMap[categoria]?.length > 0) {
+    where.acao = { in: categoryAcoesMap[categoria] };
+  }
+
+  if (search) {
+    where.OR = [
+      { acao: { contains: search, mode: "insensitive" } },
+      { entidade: { contains: search, mode: "insensitive" } },
+      { entidadeId: { contains: search, mode: "insensitive" } },
+      { tenant: { razaoSocial: { contains: search, mode: "insensitive" } } },
+      { tenant: { cnpj: { contains: search } } },
+    ];
+  }
+
+  const [rawLogs, totalCount, statsAgg, allTenants] = await Promise.all([
+    prismaAdmin.auditLog.findMany({
+      where,
+      include: {
+        tenant: {
+          select: {
+            id: true,
+            razaoSocial: true,
+            cnpj: true,
+          },
+        },
+      },
+      orderBy: { timestamp: "desc" },
+      skip,
+      take: limit,
+    }),
+    prismaAdmin.auditLog.count({ where }),
+    prismaAdmin.auditLog.groupBy({
+      by: ["acao"],
+      where: filterTenantId ? { tenantId: filterTenantId } : {},
+      _count: { id: true },
+    }),
+    prismaAdmin.tenant.findMany({
+      select: {
+        id: true,
+        razaoSocial: true,
+        cnpj: true,
+      },
+      orderBy: { razaoSocial: "asc" },
+    }),
+  ]);
+
+  let totalEmissoes = 0;
+  let totalAutorizadas = 0;
+  let totalRejeitadas = 0;
+  let totalNotificacoes = 0;
+
+  for (const s of statsAgg) {
+    if (s.acao === "EMISSAO_NFE") totalEmissoes += s._count.id;
+    if (s.acao === "WEBHOOK_AUTORIZADA") totalAutorizadas += s._count.id;
+    if (s.acao === "WEBHOOK_REJEITADA" || s.acao === "EMISSAO_NFE_REPROVADA") totalRejeitadas += s._count.id;
+    if (s.acao.startsWith("NOTIFICACAO") || s.acao.startsWith("FALLBACK")) totalNotificacoes += s._count.id;
+  }
+
+  const logs = rawLogs.map((l) => ({
+    id: l.id,
+    timestamp: l.timestamp.toISOString(),
+    acao: l.acao,
+    actorType: l.actorType,
+    actorId: l.actorId,
+    entidade: l.entidade,
+    entidadeId: l.entidadeId,
+    detalhe: l.detalhe as any,
+    tenant: l.tenant
+      ? {
+          id: l.tenant.id,
+          razaoSocial: l.tenant.razaoSocial,
+          cnpj: l.tenant.cnpj,
+        }
+      : null,
+  }));
+
+  return {
+    logs,
+    totalCount,
+    page,
+    totalPages: Math.ceil(totalCount / limit) || 1,
+    tenants: allTenants,
+    stats: {
+      totalGeral: statsAgg.reduce((acc, curr) => acc + curr._count.id, 0),
+      totalEmissoes,
+      totalAutorizadas,
+      totalRejeitadas,
+      totalNotificacoes,
+    },
+  };
+}
+
