@@ -15,7 +15,9 @@ import {
   Loader2,
   Sparkles,
   Save,
+  KeyRound,
 } from "lucide-react";
+import { FiscalIntegrationTab } from "@/components/modules/settings/FiscalIntegrationTab";
 import {
   getTenantConfigAction,
   saveNotificationRecipientAction,
@@ -27,7 +29,7 @@ import {
 } from "@/actions/tenantConfig";
 
 export default function ConfiguracoesPage() {
-  const [activeTab, setActiveTab] = useState<"contatos" | "cfop" | "fiscal" | "empresa">("contatos");
+  const [activeTab, setActiveTab] = useState<"contatos" | "cfop" | "fiscal" | "empresa" | "tokens">("contatos");
   const [loading, setLoading] = useState(true);
   const [tenant, setTenant] = useState<any | null>(null);
   const [recipients, setRecipients] = useState<any[]>([]);
@@ -263,6 +265,7 @@ export default function ConfiguracoesPage() {
           { id: "contatos", label: "Destinatários & Contador", icon: Mail },
           { id: "cfop", label: "Regras de CFOP", icon: FileText },
           { id: "fiscal", label: "Parâmetros Fiscais", icon: ShieldCheck },
+          { id: "tokens", label: "Integração Focus NFe", icon: KeyRound },
           { id: "empresa", label: "Dados Cadastrais", icon: Building2 },
         ].map((tab) => (
           <button
@@ -642,6 +645,17 @@ export default function ConfiguracoesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* TAB 5: INTEGRAÇÃO FOCUS NFE */}
+      {activeTab === "tokens" && (
+        <FiscalIntegrationTab
+          tenant={tenant}
+          onSuccess={() => {
+            setToastMessage("Credenciais fiscais salvas com sucesso!");
+            loadData();
+          }}
+        />
       )}
     </div>
   );

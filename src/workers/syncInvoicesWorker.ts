@@ -6,7 +6,7 @@
 import { Worker, Job } from "bullmq";
 import { redisConnection } from "@/lib/queue";
 import { prismaAdmin } from "@/lib/prismaAdmin";
-import { getFocusBaseUrl, getFocusMasterToken, downloadFocusNfeDocument } from "@/lib/services/focusNfe";
+import { getFocusBaseUrl, downloadFocusNfeDocument } from "@/lib/services/focusNfe";
 import { parseNfeXml } from "@/lib/services/xmlParser";
 import { uploadInvoiceXml } from "@/lib/storage";
 import { StatusConta, StatusNota, TipoNota } from "@prisma/client";
@@ -49,8 +49,13 @@ export async function processTenantMdeItems(
 
   const token =
     tenant.ambiente === "PRODUCAO"
-      ? tenant.focusNfeTokenProducao || getFocusMasterToken("PRODUCAO")
-      : tenant.focusNfeTokenHomologacao || getFocusMasterToken("HOMOLOGACAO");
+      ? tenant.focusNfeTokenProducao
+      : tenant.focusNfeTokenHomologacao;
+
+  if (!token) {
+    console.warn(`[syncInvoicesWorker] Tenant ${tenant.id} sem token Focus NFe configurado para ${tenant.ambiente}. Pulando download de arquivos.`);
+    return { newInvoicesImported: 0, duplicatesSkipped: items.length };
+  }
 
   for (const item of items) {
     const chaveAcesso = item.chave_nfe || item.chave;
@@ -191,8 +196,13 @@ export async function runSyncInvoicesCycle(): Promise<SyncCycleResult> {
       const baseUrl = getFocusBaseUrl(tenant.ambiente);
       const token =
         tenant.ambiente === "PRODUCAO"
-          ? tenant.focusNfeTokenProducao || getFocusMasterToken("PRODUCAO")
-          : tenant.focusNfeTokenHomologacao || getFocusMasterToken("HOMOLOGACAO");
+          ? tenant.focusNfeTokenProducao
+          : tenant.focusNfeTokenHomologacao;
+
+      if (!token) {
+        console.warn(`[syncInvoicesWorker] Tenant ${tenant.id} (${tenant.cnpj}) sem token Focus NFe configurado para ${tenant.ambiente}. Pulando sincronização MDe.`);
+        continue;
+      }
 
       const cleanCnpj = tenant.cnpj.replace(/\D/g, "");
       const versaoCursor = tenant.lastMdeVersao.toString();

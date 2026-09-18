@@ -13,7 +13,6 @@ import {
 import { uploadInvoiceXml, uploadInvoicePdf } from "@/lib/storage";
 import {
   getFocusBaseUrl,
-  getFocusMasterToken,
   cancelNfeInFocus,
   getNfeStatusFromFocus,
   downloadFocusNfeDocument,
@@ -257,8 +256,15 @@ export async function executeInversionAction({
   // Transmissão para a Focus NFe
   const baseUrl = getFocusBaseUrl(tenant.ambiente);
   const token = tenant.ambiente === "PRODUCAO"
-    ? tenant.focusNfeTokenProducao || getFocusMasterToken("PRODUCAO")
-    : tenant.focusNfeTokenHomologacao || getFocusMasterToken("HOMOLOGACAO");
+    ? tenant.focusNfeTokenProducao
+    : tenant.focusNfeTokenHomologacao;
+
+  if (!token) {
+    return {
+      success: false,
+      error: `Token da Focus NFe (${tenant.ambiente}) não configurado para esta oficina. Acesse Configurações > Integração Focus NFe para cadastrar suas credenciais.`,
+    };
+  }
 
   const basicAuth = Buffer.from(`${token}:`).toString("base64");
 
@@ -393,8 +399,15 @@ export async function cancelInvoiceAction(input: {
 
   const token =
     tenant.ambiente === "PRODUCAO"
-      ? tenant.focusNfeTokenProducao || getFocusMasterToken("PRODUCAO")
-      : tenant.focusNfeTokenHomologacao || getFocusMasterToken("HOMOLOGACAO");
+      ? tenant.focusNfeTokenProducao
+      : tenant.focusNfeTokenHomologacao;
+
+  if (!token) {
+    return {
+      success: false,
+      error: `Token da Focus NFe (${tenant.ambiente}) não configurado para esta oficina. Acesse Configurações > Integração Focus NFe para cadastrar suas credenciais.`,
+    };
+  }
 
   // Se a nota possui referência Focus NFe, envia o cancelamento para a SEFAZ
   if (invoice.focusNfeRef) {
@@ -489,8 +502,15 @@ export async function checkInvoiceStatusAction(invoiceId: string) {
 
   const token =
     tenant.ambiente === "PRODUCAO"
-      ? tenant.focusNfeTokenProducao || getFocusMasterToken("PRODUCAO")
-      : tenant.focusNfeTokenHomologacao || getFocusMasterToken("HOMOLOGACAO");
+      ? tenant.focusNfeTokenProducao
+      : tenant.focusNfeTokenHomologacao;
+
+  if (!token) {
+    return {
+      success: false,
+      error: `Token da Focus NFe (${tenant.ambiente}) não configurado para esta oficina. Acesse Configurações > Integração Focus NFe para cadastrar suas credenciais.`,
+    };
+  }
 
   const focusRes = await getNfeStatusFromFocus({
     ref: invoice.focusNfeRef,

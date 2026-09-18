@@ -601,3 +601,62 @@ export async function resetTenantUserPasswordAction(
   return { success: true, message: "Senha redefinida com sucesso!" };
 }
 
+/**
+ * Permite ao Administrador Master atualizar diretamente os tokens Focus NFe de uma oficina
+ */
+export async function updateTenantTokensAdminAction(
+  tenantId: string,
+  data: {
+    focusNfeTokenHomologacao?: string | null;
+    focusNfeTokenProducao?: string | null;
+    focusNfeIdEmpresa?: number | null;
+    ambiente?: "HOMOLOGACAO" | "PRODUCAO";
+  }
+) {
+  const session = await requireAdminSession();
+
+  try {
+    const updateData: any = {};
+    if (data.focusNfeTokenHomologacao !== undefined) {
+      updateData.focusNfeTokenHomologacao = data.focusNfeTokenHomologacao?.trim() || null;
+    }
+    if (data.focusNfeTokenProducao !== undefined) {
+      updateData.focusNfeTokenProducao = data.focusNfeTokenProducao?.trim() || null;
+    }
+    if (data.focusNfeIdEmpresa !== undefined) {
+      updateData.focusNfeIdEmpresa = data.focusNfeIdEmpresa ? Number(data.focusNfeIdEmpresa) : null;
+    }
+    if (data.ambiente) {
+      updateData.ambiente = data.ambiente;
+    }
+
+    await prismaAdmin.$transaction(async (tx) => {
+      await tx.tenant.update({
+        where: { id: tenantId },
+        data: updateData,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          actorType: "ADMIN",
+          actorId: session.user.id,
+          acao: "ATUALIZACAO_TOKENS_ADMIN",
+          entidade: "Tenant",
+          entidadeId: tenantId,
+          detalhe: {
+            adminEmail: session.user.email,
+            ...updateData,
+          },
+        },
+      });
+    });
+
+    revalidatePath("/admin/tenants");
+    return { success: true };
+  } catch (err: any) {
+    console.error("[updateTenantTokensAdminAction] Erro:", err);
+    return { success: false, error: err.message || "Erro ao atualizar credenciais do cliente." };
+  }
+}
+

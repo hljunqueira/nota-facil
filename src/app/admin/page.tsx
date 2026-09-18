@@ -16,7 +16,7 @@ import { StatusCadastro } from "@prisma/client";
 export const dynamic = "force-dynamic";
 
 export default async function AdminOverviewPage() {
-  const [totalTenants, pendentesCount, pendentesList, totalNotas] =
+  const [totalTenants, pendentesCount, pendentesList, totalNotas, tenantsWithProd, tenantsWithHomo] =
     await Promise.all([
       prismaAdmin.tenant.count(),
       prismaAdmin.tenant.count({
@@ -28,6 +28,12 @@ export default async function AdminOverviewPage() {
         orderBy: { createdAt: "desc" },
       }),
       prismaAdmin.invoice.count(),
+      prismaAdmin.tenant.count({
+        where: { focusNfeTokenProducao: { not: null } },
+      }),
+      prismaAdmin.tenant.count({
+        where: { focusNfeTokenHomologacao: { not: null } },
+      }),
     ]);
 
   return (
@@ -173,12 +179,12 @@ export default async function AdminOverviewPage() {
 
         <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-bold text-ink">Conexões Fiscais Master</h2>
+            <h2 className="text-base font-bold text-ink">Integração Fiscal dos Clientes</h2>
             <Link
               href="/admin/configuracoes"
               className="text-xs font-semibold text-primary hover:text-primaryDark flex items-center gap-1"
             >
-              <span>Configurar</span>
+              <span>Detalhes</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -188,25 +194,25 @@ export default async function AdminOverviewPage() {
               <div className="flex items-center gap-2.5">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
                 <div>
-                  <p className="text-xs font-semibold text-ink">Token Master Produção</p>
-                  <p className="text-[10px] text-slate-500">HokM4R...xQze (Configurado)</p>
+                  <p className="text-xs font-semibold text-ink">Clientes em Produção</p>
+                  <p className="text-[10px] text-slate-500">{tenantsWithProd} de {totalTenants} oficinas com token</p>
                 </div>
               </div>
               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                Ativo
+                Oficial SEFAZ
               </span>
             </div>
 
             <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/60">
               <div className="flex items-center gap-2.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <ShieldCheck className="w-4 h-4 text-amber-600" />
                 <div>
-                  <p className="text-xs font-semibold text-ink">Token Master Homologação</p>
-                  <p className="text-[10px] text-slate-500">z0YGKm...KaWi (Configurado)</p>
+                  <p className="text-xs font-semibold text-ink">Clientes em Homologação</p>
+                  <p className="text-[10px] text-slate-500">{tenantsWithHomo} de {totalTenants} oficinas com token</p>
                 </div>
               </div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                Ativo
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                Testes SEFAZ
               </span>
             </div>
           </div>

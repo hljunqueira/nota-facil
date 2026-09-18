@@ -10,15 +10,78 @@ export function getFocusBaseUrl(ambiente: "HOMOLOGACAO" | "PRODUCAO" = "HOMOLOGA
   return ambiente === "PRODUCAO" ? FOCUS_PRODUCAO_URL : FOCUS_HOMOLOGACAO_URL;
 }
 
-export function getFocusMasterToken(ambiente: "HOMOLOGACAO" | "PRODUCAO" = "HOMOLOGACAO"): string {
+export function getFocusPartnerToken(ambiente: "HOMOLOGACAO" | "PRODUCAO" = "HOMOLOGACAO"): string {
   if (ambiente === "PRODUCAO") {
-    return process.env.FOCUS_NFE_TOKEN_PRODUCAO || "HokM4RIK8PqGFyzkgiyShkgiT8gKxQze";
+    return process.env.FOCUS_NFE_PARTNER_TOKEN || process.env.FOCUS_NFE_TOKEN_PRODUCAO || "";
   }
-  return process.env.FOCUS_NFE_TOKEN_HOMOLOGACAO || "z0YGKmkRLmkZLQtGC7YVw1k0TL8ZKaWi";
+  return process.env.FOCUS_NFE_PARTNER_TOKEN || process.env.FOCUS_NFE_TOKEN_HOMOLOGACAO || "";
 }
 
-function getBasicAuthHeader(token: string): string {
+// Mantido para compatibilidade temporária
+export const getFocusMasterToken = getFocusPartnerToken;
+
+export function getBasicAuthHeader(token: string): string {
   return `Basic ${Buffer.from(`${token}:`).toString("base64")}`;
+}
+
+/**
+ * Testa a conexão com a Focus NFe utilizando as credenciais específicas de uma oficina
+ */
+export async function testFocusTokenConnection({
+  token,
+  ambiente = "HOMOLOGACAO",
+}: {
+  token: string;
+  ambiente?: "HOMOLOGACAO" | "PRODUCAO";
+}): Promise<{ success: boolean; message: string; httpStatus?: number }> {
+  const cleanToken = (token || "").trim();
+  if (!cleanToken || cleanToken.length < 8) {
+    return { success: false, message: "O token deve ter pelo menos 8 caracteres." };
+  }
+
+  const baseUrl = getFocusBaseUrl(ambiente);
+  try {
+    const res = await fetch(`${baseUrl}/v2/hooks`, {
+      method: "GET",
+      headers: {
+        Authorization: getBasicAuthHeader(cleanToken),
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (res.status === 401 || res.status === 403) {
+      return {
+        success: false,
+        message: `Credenciais inválidas ou não autorizadas na Focus NFe (${ambiente}). Verifique o token informado.`,
+        httpStatus: res.status,
+      };
+    }
+
+    if (res.ok) {
+      return {
+        success: true,
+        message: `Conexão bem-sucedida com a Focus NFe no ambiente de ${ambiente}! Token validado.`,
+        httpStatus: res.status,
+      };
+    }
+
+    const json = await res.json().catch(() => null);
+    const msg = json?.mensagem || json?.erros || `Focus NFe retornou status HTTP ${res.status}`;
+    
+    // Se não for 401/403, a autenticação foi aceita
+    return {
+      success: res.status < 500,
+      message: res.status < 500 ? `Token autenticado com sucesso (${ambiente}).` : msg,
+      httpStatus: res.status,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err.name === "TimeoutError"
+        ? "Tempo limite esgotado ao conectar com a Focus NFe (10s)."
+        : `Falha de conexão com a Focus NFe: ${err.message || "Servidor inacessível"}`,
+    };
+  }
 }
 
 export interface FocusCreateCompanyInput {

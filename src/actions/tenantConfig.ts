@@ -12,6 +12,7 @@ import {
 } from "@/lib/validations";
 import { StatusConta } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { testFocusTokenConnection } from "@/lib/services/focusNfe";
 
 async function requireTenantSession() {
   const session = await getServerSession(authOptions);
@@ -47,6 +48,8 @@ export async function getTenantConfigAction() {
         serieNfe: true,
         proximoNumero: true,
         focusNfeIdEmpresa: true,
+        focusNfeTokenHomologacao: true,
+        focusNfeTokenProducao: true,
       },
     }),
     tenantPrisma.notificationRecipient.findMany({
@@ -297,4 +300,75 @@ export async function completeOnboardingAction() {
   } catch (err) {
     return { success: false, error: "Erro ao concluir onboarding." };
   }
+}
+
+/**
+ * Atualiza os tokens fiscais da Focus NFe e ambiente da oficina
+ */
+export async function updateTenantFiscalTokensAction(data: {
+  focusNfeTokenHomologacao?: string | null;
+  focusNfeTokenProducao?: string | null;
+  focusNfeIdEmpresa?: number | null;
+  ambiente?: "HOMOLOGACAO" | "PRODUCAO";
+}) {
+  const { tenantId, session } = await requireTenantSession();
+
+  try {
+    const updateData: any = {};
+    if (data.focusNfeTokenHomologacao !== undefined) {
+      updateData.focusNfeTokenHomologacao = data.focusNfeTokenHomologacao?.trim() || null;
+    }
+    if (data.focusNfeTokenProducao !== undefined) {
+      updateData.focusNfeTokenProducao = data.focusNfeTokenProducao?.trim() || null;
+    }
+    if (data.focusNfeIdEmpresa !== undefined) {
+      updateData.focusNfeIdEmpresa = data.focusNfeIdEmpresa ? Number(data.focusNfeIdEmpresa) : null;
+    }
+    if (data.ambiente) {
+      updateData.ambiente = data.ambiente;
+    }
+
+    await prismaAdmin.$transaction(async (tx) => {
+      await tx.tenant.update({
+        where: { id: tenantId },
+        data: updateData,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          actorType: "USER",
+          actorId: session.user.id,
+          acao: "ATUALIZACAO_TOKENS_FISCAIS",
+          entidade: "Tenant",
+          entidadeId: tenantId,
+          detalhe: {
+            ambiente: data.ambiente,
+            hasHomologacaoToken: !!updateData.focusNfeTokenHomologacao,
+            hasProducaoToken: !!updateData.focusNfeTokenProducao,
+            focusNfeIdEmpresa: updateData.focusNfeIdEmpresa,
+          },
+        },
+      });
+    });
+
+    revalidatePath("/configuracoes");
+    revalidatePath("/dashboard");
+    revalidatePath("/notas");
+    return { success: true };
+  } catch (err: any) {
+    console.error("[updateTenantFiscalTokensAction] Erro:", err);
+    return { success: false, error: err.message || "Erro ao salvar credenciais fiscais." };
+  }
+}
+
+/**
+ * Executa teste de conexão em tempo real com a Focus NFe
+ */
+export async function testTenantFocusConnectionAction(data: {
+  token: string;
+  ambiente: "HOMOLOGACAO" | "PRODUCAO";
+}) {
+  await requireTenantSession();
+  return await testFocusTokenConnection(data);
 }

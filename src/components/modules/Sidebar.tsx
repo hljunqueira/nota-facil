@@ -9,6 +9,7 @@ import {
   Building2,
   FolderArchive,
   Settings,
+  History,
 } from "lucide-react";
 
 const navigationItems = [
@@ -31,6 +32,11 @@ const navigationItems = [
     name: "Fechamento",
     href: "/fechamento",
     icon: FolderArchive,
+  },
+  {
+    name: "Logs",
+    href: "/logs",
+    icon: History,
   },
   {
     name: "Configurações",

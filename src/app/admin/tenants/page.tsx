@@ -19,6 +19,7 @@ import { getAllTenantsAction, toggleFiscalEnvironmentAction } from "@/actions/ad
 import { UploadCertificateModal } from "@/components/modules/admin/UploadCertificateModal";
 import { RegisterFocusModal } from "@/components/modules/admin/RegisterFocusModal";
 import { ResetPasswordModal } from "@/components/modules/admin/ResetPasswordModal";
+import { EditTenantTokensModal } from "@/components/modules/admin/EditTenantTokensModal";
 
 export default function AdminTenantsPage() {
   const [tenants, setTenants] = useState<any[]>([]);
@@ -31,6 +32,7 @@ export default function AdminTenantsPage() {
   const [selectedFocusTenant, setSelectedFocusTenant] = useState<any | null>(null);
   const [selectedResetTenant, setSelectedResetTenant] = useState<any | null>(null);
   const [selectedResetUser, setSelectedResetUser] = useState<any | null>(null);
+  const [selectedTokenTenant, setSelectedTokenTenant] = useState<any | null>(null);
 
   const loadTenants = async () => {
     setLoading(true);
@@ -290,6 +292,14 @@ export default function AdminTenantsPage() {
                             Atualizar A1
                           </button>
                         )}
+                        <button
+                          onClick={() => setSelectedTokenTenant(t)}
+                          className="px-2 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-semibold transition-colors cursor-pointer flex items-center gap-1"
+                          title="Gerenciar tokens da Focus NFe deste cliente"
+                        >
+                          <KeyRound className="w-3 h-3" />
+                          <span>Tokens</span>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -333,6 +343,16 @@ export default function AdminTenantsPage() {
           }}
         />
       )}
+
+      <EditTenantTokensModal
+        tenant={selectedTokenTenant}
+        isOpen={!!selectedTokenTenant}
+        onClose={() => setSelectedTokenTenant(null)}
+        onSuccess={() => {
+          setToastMessage("Tokens fiscais atualizados com sucesso!");
+          loadTenants();
+        }}
+      />
     </div>
   );
 }

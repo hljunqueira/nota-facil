@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prismaAdmin } from "@/lib/prismaAdmin";
-import { downloadFocusNfeDocument, getFocusMasterToken } from "@/lib/services/focusNfe";
+import { downloadFocusNfeDocument } from "@/lib/services/focusNfe";
 import { uploadInvoicePdf, uploadInvoiceXml } from "@/lib/storage";
 import { sendInvoiceNotification } from "@/lib/services/notification";
 import { parseNfeXml } from "@/lib/services/xmlParser";
@@ -70,8 +70,8 @@ async function handleNfeEmissaoEvent(payload: any) {
   const tenant = invoice.tenant;
   const token =
     tenant.ambiente === "PRODUCAO"
-      ? tenant.focusNfeTokenProducao || getFocusMasterToken("PRODUCAO")
-      : tenant.focusNfeTokenHomologacao || getFocusMasterToken("HOMOLOGACAO");
+      ? tenant.focusNfeTokenProducao
+      : tenant.focusNfeTokenHomologacao;
 
   // CASO A: NOTA AUTORIZADA PELA SEFAZ
   if (status === "autorizado") {
@@ -84,26 +84,30 @@ async function handleNfeEmissaoEvent(payload: any) {
 
     // 1. Download e Backup do DANFE PDF
     const caminhoDanfe = payload.caminho_danfe || `/v2/nfe/${ref}.pdf`;
-    try {
-      const pdfDownload = await downloadFocusNfeDocument(caminhoDanfe, token, tenant.ambiente);
-      if (pdfDownload.success && pdfDownload.buffer) {
-        pdfBuffer = pdfDownload.buffer;
-        pdfUrl = await uploadInvoicePdf(tenant.id, chaveFinal, pdfBuffer);
+    if (token) {
+      try {
+        const pdfDownload = await downloadFocusNfeDocument(caminhoDanfe, token, tenant.ambiente);
+        if (pdfDownload.success && pdfDownload.buffer) {
+          pdfBuffer = pdfDownload.buffer;
+          pdfUrl = await uploadInvoicePdf(tenant.id, chaveFinal, pdfBuffer);
+        }
+      } catch (pdfErr) {
+        console.error("[Webhook Focus NFe] Erro ao baixar PDF:", pdfErr);
       }
-    } catch (pdfErr) {
-      console.error("[Webhook Focus NFe] Erro ao baixar PDF:", pdfErr);
     }
 
     // 2. Download e Backup do XML
     const caminhoXml = payload.caminho_xml_nota_fiscal || `/v2/nfe/${ref}.xml`;
-    try {
-      const xmlDownload = await downloadFocusNfeDocument(caminhoXml, token, tenant.ambiente);
-      if (xmlDownload.success && xmlDownload.buffer) {
-        xmlBuffer = xmlDownload.buffer;
-        xmlUrl = await uploadInvoiceXml(tenant.id, chaveFinal, xmlBuffer);
+    if (token) {
+      try {
+        const xmlDownload = await downloadFocusNfeDocument(caminhoXml, token, tenant.ambiente);
+        if (xmlDownload.success && xmlDownload.buffer) {
+          xmlBuffer = xmlDownload.buffer;
+          xmlUrl = await uploadInvoiceXml(tenant.id, chaveFinal, xmlBuffer);
+        }
+      } catch (xmlErr) {
+        console.error("[Webhook Focus NFe] Erro ao baixar XML:", xmlErr);
       }
-    } catch (xmlErr) {
-      console.error("[Webhook Focus NFe] Erro ao baixar XML:", xmlErr);
     }
 
     // 3. Atualiza status no banco
