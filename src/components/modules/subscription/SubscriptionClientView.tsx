@@ -8,11 +8,12 @@ import {
   QrCode,
   Copy,
   ExternalLink,
-  CheckCircle2,
   AlertCircle,
   FileText,
   MessageCircle,
   Clock,
+  ShieldCheck,
+  ArrowRight,
 } from "lucide-react";
 import { SubscriptionInfo, SubscriptionPayment, getPaymentPixAction } from "@/actions/subscription";
 import Link from "next/link";
@@ -25,22 +26,9 @@ function formatCnpj(cnpj: string): string {
   const digits = cnpj.replace(/\D/g, "");
   if (digits.length !== 14) return cnpj;
   return digits.replace(
-    /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
+    /^(\d{2})(\d{3})(\d{3})(\d{3})(\d{4})(\d{2})$/,
     "$1.$2.$3/$4-$5"
   );
-}
-
-function formatDate(isoString: string): string {
-  try {
-    const d = new Date(isoString);
-    return d.toLocaleDateString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  } catch {
-    return isoString;
-  }
 }
 
 export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) {
@@ -87,10 +75,10 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
     }.`
   )}`;
 
-  // Encontra fatura aberta ou vencida mais recente para destaque
-  const pendingPayment = tenant.payments.find(
+  // Próxima fatura: busca cobrança aberta nos pagamentos ou cria previsão
+  const nextInvoicePayment = tenant.payments.find(
     (p) => p.status === "PENDING" || p.status === "OVERDUE"
-  );
+  ) || tenant.payments[0] || null;
 
   const handleOpenPix = async (payment: SubscriptionPayment) => {
     setSelectedPayment(payment);
@@ -142,9 +130,9 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
               </p>
             </div>
           </div>
-          {pendingPayment && (
+          {nextInvoicePayment && (
             <button
-              onClick={() => handleOpenPix(pendingPayment)}
+              onClick={() => handleOpenPix(nextInvoicePayment)}
               type="button"
               className="px-3 py-1.5 rounded-md bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition-colors cursor-pointer shrink-0"
             >
@@ -183,7 +171,7 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 text-xs">
           <div>
             <span className="text-slate-400 block">CNPJ</span>
-            <span className="font-medium text-slate-800 mt-0.5 block">
+            <span className="font-medium text-slate-800 mt-0.5 block font-mono">
               {formatCnpj(tenant.cnpj)}
             </span>
           </div>
@@ -209,39 +197,113 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
         </div>
       </div>
 
-      {/* Histórico / Faturas Recorrentes */}
-      {tenant.payments.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-lg p-5">
-          <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">
-                Faturas da Assinatura
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Mensalidades geradas automaticamente todo mês no dia do seu vencimento.
-              </p>
+      {/* Card em Destaque: PRÓXIMA FATURA (com dia 05/10 ou próximo vencimento) */}
+      <div className="bg-white border-2 border-slate-900 rounded-xl p-6 shadow-xs relative overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+          <div className="space-y-1">
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-900 uppercase tracking-wider">
+              <Clock className="h-4 w-4 text-slate-700" />
+              <span>Próxima Fatura</span>
+            </span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+                {nextInvoicePayment?.vencimento || tenant.proximaFaturaData}
+              </span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                Aguardando Pagamento
+              </span>
             </div>
+            <p className="text-xs text-slate-500">
+              Mensalidade de Gestão Fiscal e Emissão de Notas da sua oficina.
+            </p>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-100 text-[11px] text-slate-400 uppercase font-semibold">
-                  <th className="py-2.5 px-3">Vencimento</th>
-                  <th className="py-2.5 px-3">Valor</th>
-                  <th className="py-2.5 px-3">Forma</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3 text-right">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {tenant.payments.map((p) => {
+          <div className="text-left sm:text-right space-y-1 sm:space-y-0">
+            <span className="text-xs text-slate-400 block">Valor a pagar</span>
+            <div className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+              R$ {nextInvoicePayment ? Number(nextInvoicePayment.valor).toFixed(2) : "295,67"}
+            </div>
+            <span className="text-[11px] text-slate-500 block">
+              R$ 289,90 líquido (+ 1,99% taxa de processamento)
+            </span>
+          </div>
+        </div>
+
+        <div className="pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <p className="text-xs text-slate-600 flex items-center gap-1.5">
+            <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span>Pagamento via Pix libera sua conta e emissão fiscal na hora.</span>
+          </p>
+
+          <div className="flex items-center gap-2">
+            {nextInvoicePayment ? (
+              <>
+                <button
+                  onClick={() => handleOpenPix(nextInvoicePayment)}
+                  type="button"
+                  className="px-4 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-xs font-semibold shadow-xs transition-colors cursor-pointer inline-flex items-center gap-2"
+                >
+                  <QrCode className="h-4 w-4 text-white" />
+                  <span>Pagar via Pix</span>
+                </button>
+                {nextInvoicePayment.invoiceUrl && (
+                  <a
+                    href={nextInvoicePayment.invoiceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-medium transition-colors inline-flex items-center gap-1.5"
+                  >
+                    <span>Boleto / Fatura</span>
+                    <ExternalLink className="h-3.5 w-3.5 text-slate-400" />
+                  </a>
+                )}
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="px-4 py-2 rounded-lg bg-slate-100 text-slate-400 text-xs font-semibold cursor-not-allowed"
+              >
+                Fatura em processamento
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Histórico / Faturas Recorrentes */}
+      <div className="bg-white border border-slate-200 rounded-lg p-5">
+        <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">
+              Histórico de Faturas
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Acompanhe todas as mensalidades e comprovantes gerados para o seu CNPJ.
+            </p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-slate-100 text-[11px] text-slate-400 uppercase font-semibold">
+                <th className="py-2.5 px-3">Vencimento</th>
+                <th className="py-2.5 px-3">Valor</th>
+                <th className="py-2.5 px-3">Forma de Pagamento</th>
+                <th className="py-2.5 px-3">Status</th>
+                <th className="py-2.5 px-3 text-right">Ação</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {tenant.payments.length > 0 ? (
+                tenant.payments.map((p) => {
                   const isPaid = p.status === "RECEIVED" || p.status === "CONFIRMED";
                   const isOverdue = p.status === "OVERDUE";
 
                   return (
                     <tr key={p.id} className="hover:bg-slate-50/60">
-                      <td className="py-3 px-3 font-medium text-slate-900">
+                      <td className="py-3 px-3 font-semibold text-slate-900">
                         {p.vencimento}
                       </td>
                       <td className="py-3 px-3 font-semibold text-slate-900">
@@ -253,7 +315,7 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
                           : p.billingType === "BOLETO"
                           ? "Boleto"
                           : p.billingType === "CREDIT_CARD"
-                          ? "Cartão"
+                          ? "Cartão de Crédito"
                           : "Pix / Boleto / Cartão"}
                       </td>
                       <td className="py-3 px-3">
@@ -300,173 +362,157 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
+                })
+              ) : (
+                <tr className="hover:bg-slate-50/60">
+                  <td className="py-3 px-3 font-semibold text-slate-900">
+                    {tenant.proximaFaturaData}
+                  </td>
+                  <td className="py-3 px-3 font-semibold text-slate-900">
+                    R$ 295,67
+                  </td>
+                  <td className="py-3 px-3 text-slate-600">
+                    Pix / Boleto Bancário
+                  </td>
+                  <td className="py-3 px-3">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                      Aguardando Pagamento
+                    </span>
+                  </td>
+                  <td className="py-3 px-3 text-right text-slate-400 italic">
+                    Disponível no vencimento
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
 
-      {/* Planos Comerciais */}
+      {/* SOMENTE O PLANO ATUAL CONTRATADO (Pedido explícito do usuário) */}
       <div>
         <div className="mb-4">
           <h2 className="text-base font-semibold text-slate-900">
-            Condições Contratuais
+            Seu Plano Contratado
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Modelos de adesão transparentes com mensalidade fixa de R$ 289,90 (+ taxa de processamento de 1,99% = R$ 295,67).
+            Condições comerciais ativas e configuradas para o seu CNPJ.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {/* Plano Parceria (24 Meses) */}
-          <div
-            className={`bg-white rounded-lg p-6 flex flex-col justify-between relative ${
-              isParceria
-                ? "border-2 border-slate-900 shadow-xs"
-                : "border border-slate-200"
-            }`}
-          >
-            <div>
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-semibold text-slate-900">
+        {isParceria ? (
+          /* Card Único: Plano Parceria (24 meses) */
+          <div className="bg-white rounded-xl p-6 border-2 border-slate-900 shadow-xs relative">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <span className="text-[11px] font-bold text-white bg-slate-900 px-2.5 py-1 rounded inline-block">
+                  SEU PLANO ATUAL
+                </span>
+                <h3 className="text-lg font-bold text-slate-900 mt-2">
                   Plano Parceria
                 </h3>
-                {isParceria ? (
-                  <span className="text-[11px] font-bold text-white bg-slate-900 px-2.5 py-1 rounded">
-                    SEU PLANO ATUAL
-                  </span>
-                ) : (
-                  <span className="text-[11px] font-medium text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-300">
-                    Fidelidade de 2 anos
-                  </span>
-                )}
+                <p className="text-xs text-slate-600 mt-1">
+                  Nós assumimos 100% do custo de implantação em troca de uma parceria de longo prazo de 24 meses.
+                </p>
               </div>
 
-              <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                Nós assumimos 100% do custo de implantação em troca de uma parceria de longo prazo de 24 meses.
-              </p>
-
-              <div className="mt-5 pt-4 border-t border-slate-100">
-                <div className="flex items-baseline gap-1">
+              <div className="text-left sm:text-right">
+                <div className="flex items-baseline gap-1 sm:justify-end">
                   <span className="text-xs font-semibold text-slate-500">R$</span>
                   <span className="text-3xl font-bold tracking-tight text-slate-900">
                     289,90
                   </span>
                   <span className="text-xs text-slate-500">/ mês</span>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Taxa de processamento bancário (1,99%): <strong>+ R$ 5,77</strong> • Total mensal: <strong>R$ 295,67</strong>
-                </p>
-                <p className="text-xs text-emerald-700 font-medium mt-1 flex items-center gap-1.5">
-                  Taxa de implantação e setup: <strong className="font-semibold">R$ 0,00 (100% Isento)</strong>
-                </p>
+                <span className="text-xs text-slate-500 block mt-0.5">
+                  Taxa de processamento (1,99%): <strong>+ R$ 5,77</strong> • Total: <strong>R$ 295,67</strong>
+                </span>
               </div>
+            </div>
 
-              <div className="mt-5 space-y-2.5 pt-4 border-t border-slate-100 text-xs text-slate-600">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-5 text-xs text-slate-600">
+              <div className="space-y-2.5">
                 <div className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
+                  <Check className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
                   <span>
-                    <strong className="text-slate-900">Economia de R$ 490,00</strong> na taxa inicial de configuração
+                    Taxa de implantação do servidor: <strong className="text-emerald-700 font-semibold">R$ 0,00 (100% Isento — Economia de R$ 490,00)</strong>
                   </span>
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
-                  <span>Alinhamento e infraestrutura dedicados por nossa equipe</span>
+                  <span>Configuração e alinhamento de infraestrutura dedicados por nossa equipe</span>
                 </div>
+              </div>
+
+              <div className="space-y-2.5">
                 <div className="flex items-start gap-2">
                   <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
                   <span>Contrato de parceria com vigência e estabilidade de 24 meses</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
-                  <span>Geração automática da fatura mensal no dia do vencimento</span>
+                  <span>Geração automática da fatura todo mês no dia {tenant.diaVencimento}</span>
                 </div>
               </div>
             </div>
-
-            <div className="mt-6 pt-4 border-t border-slate-100">
-              <span className="text-[11px] text-slate-500 block">
-                {isParceria
-                  ? "Este é o plano ativo configurado para o seu CNPJ."
-                  : "Ideal para oficinas com operação contínua e previsibilidade de custos."}
-              </span>
-            </div>
           </div>
-
-          {/* Plano Flex (Sem Fidelidade) */}
-          <div
-            className={`bg-white rounded-lg p-6 flex flex-col justify-between ${
-              !isParceria
-                ? "border-2 border-slate-900 shadow-xs"
-                : "border border-slate-200"
-            }`}
-          >
-            <div>
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-semibold text-slate-900">
+        ) : (
+          /* Card Único: Plano Flex (Sem fidelidade) */
+          <div className="bg-white rounded-xl p-6 border-2 border-slate-900 shadow-xs relative">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <span className="text-[11px] font-bold text-white bg-slate-900 px-2.5 py-1 rounded inline-block">
+                  SEU PLANO ATUAL
+                </span>
+                <h3 className="text-lg font-bold text-slate-900 mt-2">
                   Plano Flex
                 </h3>
-                {!isParceria ? (
-                  <span className="text-[11px] font-bold text-white bg-slate-900 px-2.5 py-1 rounded">
-                    SEU PLANO ATUAL
-                  </span>
-                ) : (
-                  <span className="text-[11px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                    Sem Fidelidade
-                  </span>
-                )}
+                <p className="text-xs text-slate-600 mt-1">
+                  Liberdade total sem carência contratual, pagando a taxa única de configuração de entrada.
+                </p>
               </div>
 
-              <p className="text-xs text-slate-600 mt-2 leading-relaxed">
-                Para quem prefere liberdade total sem carência contratual, pagando a taxa única de configuração de entrada.
-              </p>
-
-              <div className="mt-5 pt-4 border-t border-slate-100">
-                <div className="flex items-baseline gap-1">
+              <div className="text-left sm:text-right">
+                <div className="flex items-baseline gap-1 sm:justify-end">
                   <span className="text-xs font-semibold text-slate-500">R$</span>
                   <span className="text-3xl font-bold tracking-tight text-slate-900">
                     289,90
                   </span>
                   <span className="text-xs text-slate-500">/ mês</span>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Taxa de processamento bancário (1,99%): <strong>+ R$ 5,77</strong> • Total mensal: <strong>R$ 295,67</strong>
-                </p>
-                <p className="text-xs text-slate-700 mt-1">
-                  Taxa única de implantação e servidor: <strong className="font-semibold">R$ 490,00</strong>
-                </p>
-              </div>
-
-              <div className="mt-5 space-y-2.5 pt-4 border-t border-slate-100 text-xs text-slate-600">
-                <div className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-slate-700 shrink-0 mt-0.5" />
-                  <span>Configuração e homologação inicial completa</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-slate-700 shrink-0 mt-0.5" />
-                  <span>Sem tempo mínimo de permanência contratual</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-slate-700 shrink-0 mt-0.5" />
-                  <span>Acesso irrestrito a todas as funcionalidades do sistema</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-slate-700 shrink-0 mt-0.5" />
-                  <span>Suporte e atualizações automáticas de legislação tributária</span>
-                </div>
+                <span className="text-xs text-slate-500 block mt-0.5">
+                  Taxa de processamento (1,99%): <strong>+ R$ 5,77</strong> • Total: <strong>R$ 295,67</strong>
+                </span>
               </div>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-slate-100">
-              <span className="text-[11px] text-slate-500 block">
-                {!isParceria
-                  ? "Este é o plano ativo configurado para o seu CNPJ."
-                  : "Contrato mensal com renovação automática sem carência."}
-              </span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-5 text-xs text-slate-600">
+              <div className="space-y-2.5">
+                <div className="flex items-start gap-2">
+                  <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
+                  <span>
+                    Taxa única de implantação e setup: <strong className="text-slate-900 font-semibold">R$ 490,00</strong>
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
+                  <span>Sem carência ou fidelidade de permanência contratual</span>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="flex items-start gap-2">
+                  <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
+                  <span>Acesso irrestrito a todas as funcionalidades fiscais</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
+                  <span>Renovação mensal automática</span>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Funcionalidades Incluídas */}

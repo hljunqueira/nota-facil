@@ -29,6 +29,8 @@ export interface SubscriptionInfo {
   asaasSubscriptionId: string | null;
   plano: string;
   diaVencimento: number;
+  proximaFaturaData: string;
+  valorMensalidade: number;
   payments: SubscriptionPayment[];
 }
 
@@ -63,6 +65,12 @@ export async function getSubscriptionInfoAction(): Promise<SubscriptionInfo> {
     throw new Error("Oficina não encontrada no sistema.");
   }
 
+  const { calculateNextDueDate, VALOR_MENSALIDADE_COM_TAXA } = await import("@/lib/services/asaas");
+  const diaVenc = tenant.diaVencimento || 5;
+  const rawDueDate = calculateNextDueDate(diaVenc);
+  const [yyyy, mm, dd] = rawDueDate.split("-");
+  const proximaFaturaData = `${dd}/${mm}/${yyyy}`;
+
   let payments: SubscriptionPayment[] = [];
   if (tenant.asaasSubscriptionId) {
     try {
@@ -76,7 +84,9 @@ export async function getSubscriptionInfoAction(): Promise<SubscriptionInfo> {
   return {
     ...tenant,
     plano: tenant.plano || "PARCERIA",
-    diaVencimento: tenant.diaVencimento || 10,
+    diaVencimento: diaVenc,
+    proximaFaturaData,
+    valorMensalidade: VALOR_MENSALIDADE_COM_TAXA,
     createdAt: tenant.createdAt.toISOString(),
     payments,
   };
