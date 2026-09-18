@@ -14,12 +14,10 @@ import {
   Loader2,
   Sparkles,
   Save,
-  KeyRound,
   CalendarCheck2,
   MessageCircle,
   Lock,
 } from "lucide-react";
-import { FiscalIntegrationTab } from "@/components/modules/settings/FiscalIntegrationTab";
 import { WhatsAppConnectionTab } from "@/components/modules/settings/WhatsAppConnectionTab";
 import { MonthlyCloseTab } from "@/components/modules/settings/MonthlyCloseTab";
 import {
@@ -33,11 +31,13 @@ import {
   updateTenantCompanyDataAction,
 } from "@/actions/tenantConfig";
 
-type TabId = "contatos" | "fechamento" | "whatsapp" | "empresa" | "cfop" | "fiscal" | "tokens";
+type TabId = "empresa" | "cfop" | "fiscal" | "contatos" | "fechamento" | "whatsapp";
 
 function ConfiguracoesContent() {
   const searchParams = useSearchParams();
-  const initialTab = (searchParams.get("tab") as TabId) || "contatos";
+  const rawTab = searchParams.get("tab") as TabId;
+  const validTabs: TabId[] = ["empresa", "cfop", "fiscal", "contatos", "fechamento", "whatsapp"];
+  const initialTab: TabId = validTabs.includes(rawTab) ? rawTab : "empresa";
 
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const [loading, setLoading] = useState(true);
@@ -84,7 +84,7 @@ function ConfiguracoesContent() {
   // Sincronizar tab pela URL caso o usuário navegue ou redirecione
   useEffect(() => {
     const tabParam = searchParams.get("tab") as TabId;
-    if (tabParam && ["contatos", "fechamento", "whatsapp", "empresa", "cfop", "fiscal", "tokens"].includes(tabParam)) {
+    if (tabParam && ["empresa", "cfop", "fiscal", "contatos", "fechamento", "whatsapp"].includes(tabParam)) {
       setActiveTab(tabParam);
     }
   }, [searchParams]);
@@ -328,13 +328,12 @@ function ConfiguracoesContent() {
       {/* Tabs */}
       <div className="flex border-b border-slate-200 bg-white rounded-2xl p-1.5 gap-1 shadow-xs overflow-x-auto">
         {[
-          { id: "contatos", label: "Destinatários & Contador", icon: Mail },
-          { id: "fechamento", label: "Fechamento Mensal", icon: CalendarCheck2 },
-          { id: "whatsapp", label: "Conexão WhatsApp", icon: MessageCircle },
           { id: "empresa", label: "Dados da Empresa", icon: Building2 },
           { id: "cfop", label: "Regras de CFOP", icon: FileText },
           { id: "fiscal", label: "Parâmetros Fiscais", icon: ShieldCheck },
-          { id: "tokens", label: "Integração Focus NFe", icon: KeyRound },
+          { id: "contatos", label: "Destinatários & Contador", icon: Mail },
+          { id: "fechamento", label: "Fechamento Mensal", icon: CalendarCheck2 },
+          { id: "whatsapp", label: "Conexão WhatsApp", icon: MessageCircle },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -806,17 +805,6 @@ function ConfiguracoesContent() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* TAB: INTEGRAÇÃO FOCUS NFE */}
-      {activeTab === "tokens" && (
-        <FiscalIntegrationTab
-          tenant={tenant}
-          onSuccess={() => {
-            setToastMessage("Credenciais fiscais salvas com sucesso!");
-            loadData();
-          }}
-        />
       )}
     </div>
   );
