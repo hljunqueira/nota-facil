@@ -75,10 +75,13 @@ export async function getSubscriptionInfoAction(): Promise<SubscriptionInfo> {
   try {
     const { getAsaasSubscriptionPayments } = await import("@/lib/services/asaas");
     if (tenant.asaasCustomerId) {
+      console.log(`[SubscriptionAction] Buscando faturas para customerId: ${tenant.asaasCustomerId}`);
       payments = await getAsaasSubscriptionPayments(tenant.asaasCustomerId, true);
     } else if (tenant.asaasSubscriptionId) {
+      console.log(`[SubscriptionAction] Buscando faturas para subscriptionId: ${tenant.asaasSubscriptionId}`);
       payments = await getAsaasSubscriptionPayments(tenant.asaasSubscriptionId, false);
     }
+    console.log(`[SubscriptionAction] Total de pagamentos obtidos: ${payments.length}`);
   } catch (err) {
     console.error("[getSubscriptionInfoAction] Erro ao buscar pagamentos:", err);
   }

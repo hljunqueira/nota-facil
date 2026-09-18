@@ -1,19 +1,30 @@
 import { prismaAdmin } from "@/lib/prismaAdmin";
 
-const ASAAS_API_URL = process.env.ASAAS_API_URL || "https://api.asaas.com/v3";
-const ASAAS_API_KEY = process.env.ASAAS_API_KEY || "";
+function getAsaasApiKey(): string {
+  const raw = process.env.ASAAS_API_KEY || "";
+  return raw.replace(/^["']|["']$/g, "").trim();
+}
+
+function getAsaasApiUrl(): string {
+  const raw = process.env.ASAAS_API_URL || "https://api.asaas.com/v3";
+  return raw.replace(/^["']|["']$/g, "").trim();
+}
 
 // Valor base da mensalidade R$ 289,90 + taxa de gateway de 1,99% (R$ 5,77) = R$ 295,67
 export const VALOR_MENSALIDADE_BASE = 289.9;
 export const VALOR_MENSALIDADE_COM_TAXA = 295.67;
 
 function getHeaders() {
-  if (!ASAAS_API_KEY) {
-    console.warn("[AsaasService] ASAAS_API_KEY não configurada no ambiente.");
+  const apiKey = getAsaasApiKey();
+  if (!apiKey) {
+    console.warn(
+      "[AsaasService] ASAAS_API_KEY não configurada no ambiente. Keys disponíveis:",
+      Object.keys(process.env).filter((k) => k.toUpperCase().includes("ASAAS"))
+    );
   }
   return {
     "Content-Type": "application/json",
-    access_token: ASAAS_API_KEY,
+    access_token: apiKey,
   };
 }
 
@@ -67,7 +78,7 @@ export async function getOrCreateAsaasCustomer(tenant: {
   // 1. Se já tiver customerId salvo no banco, valida no Asaas
   if (tenant.asaasCustomerId) {
     try {
-      const checkRes = await fetch(`${ASAAS_API_URL}/customers/${tenant.asaasCustomerId}`, {
+      const checkRes = await fetch(`${getAsaasApiUrl()}/customers/${tenant.asaasCustomerId}`, {
         method: "GET",
         headers: getHeaders(),
       });
@@ -81,7 +92,7 @@ export async function getOrCreateAsaasCustomer(tenant: {
 
   // 2. Consulta prévia por CNPJ para evitar duplicidade no Asaas
   try {
-    const searchRes = await fetch(`${ASAAS_API_URL}/customers?cpfCnpj=${cleanCnpj}`, {
+    const searchRes = await fetch(`${getAsaasApiUrl()}/customers?cpfCnpj=${cleanCnpj}`, {
       method: "GET",
       headers: getHeaders(),
     });
@@ -102,7 +113,7 @@ export async function getOrCreateAsaasCustomer(tenant: {
   }
 
   // 3. Cadastra novo cliente no Asaas
-  const createRes = await fetch(`${ASAAS_API_URL}/customers`, {
+  const createRes = await fetch(`${getAsaasApiUrl()}/customers`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify({
@@ -157,7 +168,7 @@ export async function createOrUpdateAsaasSubscription(
   // 1. Tenta atualizar assinatura existente
   if (subscriptionId) {
     try {
-      const updateRes = await fetch(`${ASAAS_API_URL}/subscriptions/${subscriptionId}`, {
+      const updateRes = await fetch(`${getAsaasApiUrl()}/subscriptions/${subscriptionId}`, {
         method: "PUT",
         headers: getHeaders(),
         body: JSON.stringify({
@@ -195,7 +206,7 @@ export async function createOrUpdateAsaasSubscription(
   }
 
   // 2. Cria nova assinatura mensal
-  const createRes = await fetch(`${ASAAS_API_URL}/subscriptions`, {
+  const createRes = await fetch(`${getAsaasApiUrl()}/subscriptions`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify({
@@ -248,8 +259,8 @@ export async function getAsaasSubscriptionPayments(
 
   try {
     const url = isCustomer
-      ? `${ASAAS_API_URL}/payments?customer=${identifier}&limit=50&order=asc&sort=dueDate`
-      : `${ASAAS_API_URL}/subscriptions/${identifier}/payments?limit=50&order=asc&sort=dueDate`;
+      ? `${getAsaasApiUrl()}/payments?customer=${identifier}&limit=50&order=asc&sort=dueDate`
+      : `${getAsaasApiUrl()}/subscriptions/${identifier}/payments?limit=50&order=asc&sort=dueDate`;
 
     const res = await fetch(url, {
       method: "GET",
@@ -329,7 +340,7 @@ export async function createImplantationCharge({
     if (creditCardHolderInfo) body.creditCardHolderInfo = creditCardHolderInfo;
   }
 
-  const res = await fetch(`${ASAAS_API_URL}/payments`, {
+  const res = await fetch(`${getAsaasApiUrl()}/payments`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(body),
@@ -354,7 +365,7 @@ export async function getAsaasPaymentPix(paymentId: string): Promise<{
   if (!paymentId) return null;
 
   try {
-    const res = await fetch(`${ASAAS_API_URL}/payments/${paymentId}/pixQrCode`, {
+    const res = await fetch(`${getAsaasApiUrl()}/payments/${paymentId}/pixQrCode`, {
       method: "GET",
       headers: getHeaders(),
     });
