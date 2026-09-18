@@ -86,7 +86,7 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
     }
   };
 
-  const whatsappSuporteUrl = `https://wa.me/5548991852757?text=${encodeURIComponent(
+  const whatsappSuporteUrl = `https://wa.me/5548991498502?text=${encodeURIComponent(
     `Olá! Gostaria de falar sobre a assinatura da oficina ${tenant.razaoSocial} (CNPJ: ${tenant.cnpj}).`
   )}`;
 
@@ -178,7 +178,7 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
           <div>
             <span className="text-slate-400 block text-[11px]">Taxa de Implantação</span>
             <span className={`font-semibold mt-0.5 block ${isParceria ? "text-emerald-700" : "text-slate-800"}`}>
-              {isParceria ? "R$ 0,00 (100% Isento — Economia R$ 490)" : "R$ 490,00 (Taxa única)"}
+              {isParceria ? "R$ 0,00 (100% Isento — Economia R$ 490)" : "R$ 490,00 (À vista ou no Cartão com taxas)"}
             </span>
           </div>
           <div>
@@ -207,7 +207,7 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              Geração automática todo mês no dia {tenant.diaVencimento}.
+              Faturamento mensal via Pix e Boleto Bancário (vencimento dia {tenant.diaVencimento}).
             </p>
           </div>
 
@@ -217,7 +217,7 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
               R$ {nextInvoicePayment ? Number(nextInvoicePayment.valor).toFixed(2) : "295,67"}
             </div>
             <span className="text-[11px] text-slate-500 block">
-              R$ 289,90 líquido (+ 1,99% taxa Asaas)
+              R$ 289,90 líquido (+ 1,99% processamento bancário)
             </span>
           </div>
         </div>
@@ -386,16 +386,16 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
       <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
         <div>
           <span className="font-semibold text-slate-900 block">Dúvidas sobre sua assinatura ou faturas?</span>
-          <span className="text-slate-500">Nosso time técnico está à disposição no WhatsApp.</span>
+          <span className="text-slate-500">Nosso time técnico está à disposição no WhatsApp (48) 99149-8502.</span>
         </div>
         <a
           href={whatsappSuporteUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium transition-colors whitespace-nowrap self-start sm:self-auto"
+          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium transition-colors whitespace-nowrap self-start sm:self-auto cursor-pointer"
         >
           <MessageCircle className="h-3.5 w-3.5" />
-          <span>Falar com Atendimento</span>
+          <span>Falar com Atendimento (48 99149-8502)</span>
         </a>
       </div>
 

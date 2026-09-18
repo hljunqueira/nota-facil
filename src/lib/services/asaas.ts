@@ -200,7 +200,7 @@ export async function createOrUpdateAsaasSubscription(
     headers: getHeaders(),
     body: JSON.stringify({
       customer: customerId,
-      billingType: "UNDEFINED", // Permite ao cliente escolher PIX, Cartão ou Boleto
+      billingType: "BOLETO", // Mensalidade via Pix e Boleto Bancário
       value: valorFinal,
       nextDueDate,
       cycle: "MONTHLY",
@@ -238,19 +238,24 @@ export async function createOrUpdateAsaasSubscription(
 }
 
 /**
- * Busca histórico e faturas atuais vinculadas à assinatura
+ * Busca histórico e faturas atuais vinculadas à assinatura ou ao cliente
  */
-export async function getAsaasSubscriptionPayments(subscriptionId: string) {
-  if (!subscriptionId) return [];
+export async function getAsaasSubscriptionPayments(
+  identifier: string,
+  isCustomer: boolean = false
+) {
+  if (!identifier) return [];
 
   try {
-    const res = await fetch(
-      `${ASAAS_API_URL}/subscriptions/${subscriptionId}/payments?limit=10`,
-      {
-        method: "GET",
-        headers: getHeaders(),
-      }
-    );
+    const url = isCustomer
+      ? `${ASAAS_API_URL}/payments?customer=${identifier}&limit=50&order=asc&sort=dueDate`
+      : `${ASAAS_API_URL}/subscriptions/${identifier}/payments?limit=50&order=asc&sort=dueDate`;
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: getHeaders(),
+      cache: "no-store",
+    });
 
     if (!res.ok) return [];
 
@@ -267,9 +272,75 @@ export async function getAsaasSubscriptionPayments(subscriptionId: string) {
       dataPagamento: item.paymentDate || item.clientPaymentDate || null,
     }));
   } catch (err) {
-    console.error("[Asaas] Erro ao buscar pagamentos da assinatura:", err);
+    console.error("[Asaas] Erro ao buscar pagamentos:", err);
     return [];
   }
+}
+
+/**
+ * Taxa de implantação avulsa (R$ 490,00)
+ * Cobrada via Pix/Boleto ou Cartão de Crédito com taxas repassadas para o cliente
+ */
+export async function createImplantationCharge({
+  tenantId,
+  billingType,
+  creditCard,
+  creditCardHolderInfo,
+  installmentCount = 1,
+}: {
+  tenantId: string;
+  billingType: "PIX" | "BOLETO" | "CREDIT_CARD";
+  creditCard?: any;
+  creditCardHolderInfo?: any;
+  installmentCount?: number;
+}) {
+  const tenant = await prismaAdmin.tenant.findUnique({
+    where: { id: tenantId },
+  });
+
+  if (!tenant) {
+    throw new Error("Oficina não encontrada.");
+  }
+
+  const customerId = await getOrCreateAsaasCustomer(tenant);
+  const VALOR_BASE = 490.00;
+
+  // No cartão de crédito, repassa taxas da operadora (ex: 3,99% + 1,5% por parcela adicional)
+  const taxaCartaoPercent = 0.0399 + (installmentCount > 1 ? (installmentCount - 1) * 0.015 : 0);
+  const valorFinal = billingType === "CREDIT_CARD"
+    ? Number((VALOR_BASE * (1 + taxaCartaoPercent)).toFixed(2))
+    : VALOR_BASE;
+
+  const body: any = {
+    customer: customerId,
+    billingType,
+    value: valorFinal,
+    dueDate: new Date().toISOString().split("T")[0],
+    description: `Taxa de Implantação e Treinamento Nota Fácil (${installmentCount > 1 ? `${installmentCount}x no Cartão com taxas` : billingType})`,
+    externalReference: `IMPLANTACAO_${tenantId}`,
+  };
+
+  if (billingType === "CREDIT_CARD") {
+    if (installmentCount > 1) {
+      body.installmentCount = installmentCount;
+      body.totalValue = valorFinal;
+    }
+    if (creditCard) body.creditCard = creditCard;
+    if (creditCardHolderInfo) body.creditCardHolderInfo = creditCardHolderInfo;
+  }
+
+  const res = await fetch(`${ASAAS_API_URL}/payments`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Erro ao gerar taxa de implantação: ${err}`);
+  }
+
+  return res.json();
 }
 
 /**

@@ -72,20 +72,25 @@ export async function getSubscriptionInfoAction(): Promise<SubscriptionInfo> {
   const proximaFaturaData = `${dd}/${mm}/${yyyy}`;
 
   let payments: SubscriptionPayment[] = [];
-  if (tenant.asaasSubscriptionId) {
-    try {
-      const { getAsaasSubscriptionPayments } = await import("@/lib/services/asaas");
-      payments = await getAsaasSubscriptionPayments(tenant.asaasSubscriptionId);
-    } catch (err) {
-      console.error("[getSubscriptionInfoAction] Erro ao buscar pagamentos:", err);
+  try {
+    const { getAsaasSubscriptionPayments } = await import("@/lib/services/asaas");
+    if (tenant.asaasCustomerId) {
+      payments = await getAsaasSubscriptionPayments(tenant.asaasCustomerId, true);
+    } else if (tenant.asaasSubscriptionId) {
+      payments = await getAsaasSubscriptionPayments(tenant.asaasSubscriptionId, false);
     }
+  } catch (err) {
+    console.error("[getSubscriptionInfoAction] Erro ao buscar pagamentos:", err);
   }
+
+  const pendingPayment = payments.find((p) => p.status === "PENDING" || p.status === "OVERDUE");
+  const proximaFaturaFinal = pendingPayment ? pendingPayment.vencimento : proximaFaturaData;
 
   return {
     ...tenant,
     plano: tenant.plano || "PARCERIA",
     diaVencimento: diaVenc,
-    proximaFaturaData,
+    proximaFaturaData: proximaFaturaFinal,
     valorMensalidade: VALOR_MENSALIDADE_COM_TAXA,
     createdAt: tenant.createdAt.toISOString(),
     payments,
