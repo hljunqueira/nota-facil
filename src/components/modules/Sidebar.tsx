@@ -67,8 +67,8 @@ export function Sidebar() {
   return (
     <>
       {/* Sidebar para Desktop */}
-      <aside className="hidden md:flex w-60 flex-col border-r border-slate-200 bg-white min-h-[calc(100vh-3.5rem)] p-3">
-        <nav className="space-y-0.5" aria-label="Menu Principal">
+      <aside className="hidden md:flex w-64 flex-col border-r border-slate-200 bg-white sticky top-14 h-[calc(100vh-3.5rem)] p-4 justify-between">
+        <nav className="space-y-1" aria-label="Menu Principal">
           {navigationItems.map((item) => {
             const isActive =
               item.href === "/dashboard"
@@ -79,14 +79,14 @@ export function Sidebar() {
               <Link
                 key={item.name}
                 href={item.href}
-                className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-xs font-medium transition-colors ${
+                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   isActive
                     ? "bg-slate-100 text-slate-900 font-semibold"
                     : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                 }`}
               >
                 <item.icon
-                  className={`h-4 w-4 shrink-0 ${
+                  className={`h-4.5 w-4.5 shrink-0 ${
                     isActive ? "text-slate-900" : "text-slate-400"
                   }`}
                 />
@@ -97,13 +97,13 @@ export function Sidebar() {
         </nav>
 
         {/* Rodapé da Sidebar Desktop com Botão de Sair */}
-        <div className="mt-auto pt-3 border-t border-slate-100">
+        <div className="pt-3 border-t border-slate-100">
           <button
             onClick={handleSignOut}
             type="button"
-            className="flex items-center gap-2.5 w-full px-3 py-2 rounded-md text-xs font-medium text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+            className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
           >
-            <LogOut className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-rose-600" />
+            <LogOut className="h-4.5 w-4.5 shrink-0 text-slate-400 group-hover:text-rose-600" />
             <span>Sair da conta</span>
           </button>
         </div>

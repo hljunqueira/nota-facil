@@ -258,7 +258,9 @@ export async function getAsaasSubscriptionPayments(subscriptionId: string) {
     return (data.data || []).map((item: any) => ({
       id: item.id,
       valor: item.value,
-      vencimento: item.dueDate,
+      vencimento: item.dueDate && item.dueDate.includes("-")
+        ? item.dueDate.split("-").reverse().join("/")
+        : item.dueDate,
       status: item.status, // "PENDING", "CONFIRMED", "RECEIVED", "OVERDUE", etc.
       billingType: item.billingType,
       invoiceUrl: item.invoiceUrl || item.bankSlipUrl || null,

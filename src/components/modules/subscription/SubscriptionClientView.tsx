@@ -9,14 +9,11 @@ import {
   Copy,
   ExternalLink,
   AlertCircle,
-  FileText,
   MessageCircle,
   Clock,
   ShieldCheck,
-  ArrowRight,
 } from "lucide-react";
 import { SubscriptionInfo, SubscriptionPayment, getPaymentPixAction } from "@/actions/subscription";
-import Link from "next/link";
 
 interface SubscriptionClientViewProps {
   tenant: SubscriptionInfo;
@@ -26,7 +23,7 @@ function formatCnpj(cnpj: string): string {
   const digits = cnpj.replace(/\D/g, "");
   if (digits.length !== 14) return cnpj;
   return digits.replace(
-    /^(\d{2})(\d{3})(\d{3})(\d{3})(\d{4})(\d{2})$/,
+    /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
     "$1.$2.$3/$4-$5"
   );
 }
@@ -47,7 +44,7 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
       case "ATIVO":
         return { label: "Conta Ativa", class: "text-emerald-700 bg-emerald-50 border-emerald-200" };
       case "EM_ONBOARDING":
-        return { label: "Em Configuração Inicial", class: "text-amber-700 bg-amber-50 border-amber-200" };
+        return { label: "Em Configuração", class: "text-amber-700 bg-amber-50 border-amber-200" };
       case "SUSPENSO_PAGAMENTO":
         return { label: "Pagamento Pendente", class: "text-rose-700 bg-rose-50 border-rose-200" };
       case "SUSPENSO_ADMIN":
@@ -59,26 +56,11 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
 
   const statusBadge = getStatusBadge(tenant.statusConta);
 
-  const recursosPadrao = [
-    "Emissão ilimitada de NF-e e Retorno de Facção com 1 clique",
-    "Preenchimento e cálculo automático de CFOP de retorno",
-    "Consulta e importação de XML e PDF direto da SEFAZ via DFe",
-    "Fechamento mensal consolidado com pacote ZIP para o contador",
-    "Painel de auditoria e logs detalhados de cada operação fiscal",
-    "Certificado digital A1 protegido em infraestrutura dedicada",
-    "Suporte técnico direto para alinhamento e dúvidas fiscais",
-  ];
-
-  const whatsappSuporteUrl = `https://wa.me/5511999999999?text=${encodeURIComponent(
-    `Olá! Gostaria de falar sobre a assinatura da minha oficina: ${tenant.razaoSocial} (CNPJ: ${tenant.cnpj}) — Plano: ${
-      isParceria ? "Plano Parceria (24 meses)" : "Plano Flex"
-    }.`
-  )}`;
-
-  // Próxima fatura: busca cobrança aberta nos pagamentos ou cria previsão
-  const nextInvoicePayment = tenant.payments.find(
-    (p) => p.status === "PENDING" || p.status === "OVERDUE"
-  ) || tenant.payments[0] || null;
+  // Seleciona a cobrança da próxima fatura
+  const nextInvoicePayment =
+    tenant.payments.find((p) => p.status === "PENDING" || p.status === "OVERDUE") ||
+    tenant.payments[0] ||
+    null;
 
   const handleOpenPix = async (payment: SubscriptionPayment) => {
     setSelectedPayment(payment);
@@ -104,127 +86,138 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
     }
   };
 
+  const whatsappSuporteUrl = `https://wa.me/5548991852757?text=${encodeURIComponent(
+    `Olá! Gostaria de falar sobre a assinatura da oficina ${tenant.razaoSocial} (CNPJ: ${tenant.cnpj}).`
+  )}`;
+
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
+    <div className="space-y-6 max-w-4xl mx-auto">
       {/* Cabeçalho da Página */}
-      <div className="border-b border-slate-200 pb-5">
-        <h1 className="text-xl font-semibold text-slate-900 tracking-tight">
-          Minha Assinatura
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Acompanhe os dados da sua oficina, o status da sua conta e as faturas do seu plano.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+            Minha Assinatura
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {tenant.razaoSocial} • CNPJ: <span className="font-mono">{formatCnpj(tenant.cnpj)}</span>
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold border ${statusBadge.class}`}>
+            {statusBadge.label}
+          </span>
+          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-900 text-white">
+            {isParceria ? "Plano Parceria (24 meses)" : "Plano Flex"}
+          </span>
+        </div>
       </div>
 
-      {/* Alerta de Pendência Financeira se houver */}
+      {/* Alerta de Regularização se houver pendência */}
       {tenant.statusConta === "SUSPENSO_PAGAMENTO" && (
-        <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 flex items-start justify-between gap-3">
-          <div className="flex items-start gap-2.5">
-            <AlertCircle className="h-5 w-5 text-rose-600 shrink-0 mt-0.5" />
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="h-5 w-5 text-rose-600 shrink-0" />
             <div>
-              <h3 className="text-xs font-semibold text-rose-900">
-                Mensalidade pendente de regularização
-              </h3>
-              <p className="text-xs text-rose-700 mt-0.5">
-                Para manter a emissão de notas fiscais ativa, realize o pagamento da sua fatura via Pix ou Boleto.
-              </p>
+              <h3 className="text-xs font-bold text-rose-900">Mensalidade pendente</h3>
+              <p className="text-xs text-rose-700">Realize o pagamento via Pix para reativar suas emissões fiscais na hora.</p>
             </div>
           </div>
           {nextInvoicePayment && (
             <button
               onClick={() => handleOpenPix(nextInvoicePayment)}
               type="button"
-              className="px-3 py-1.5 rounded-md bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition-colors cursor-pointer shrink-0"
+              className="px-3.5 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition-colors cursor-pointer shrink-0"
             >
-              Pagar via Pix
+              Pagar Pix
             </button>
           )}
         </div>
       )}
 
-      {/* Resumo da Oficina / Conta */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5">
+      {/* 1. SEU PLANO CONTRATADO (Compacto, elegante e exclusivo) */}
+      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
-            <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Empresa Titular
-            </span>
-            <h2 className="text-base font-semibold text-slate-900 mt-0.5">
-              {tenant.razaoSocial}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                Seu Plano Contratado
+              </span>
+            </div>
+            <h2 className="text-base font-bold text-slate-900 mt-1.5">
+              {isParceria ? "Plano Parceria (Fidelidade de 2 anos)" : "Plano Flex (Sem fidelidade)"}
             </h2>
-            {tenant.nomeFantasia && (
-              <p className="text-xs text-slate-500">{tenant.nomeFantasia}</p>
-            )}
+            <p className="text-xs text-slate-500 mt-0.5">
+              {isParceria
+                ? "Taxa de implantação 100% isenta em troca de parceria de longo prazo."
+                : "Liberdade contratual mensal sem tempo mínimo de permanência."}
+            </p>
           </div>
-          <div className="flex items-center gap-2.5">
-            <span
-              className={`inline-flex items-center px-2.5 py-1 rounded text-xs font-medium border ${statusBadge.class}`}
-            >
-              {statusBadge.label}
-            </span>
-            <span className="inline-flex items-center px-2.5 py-1 rounded text-xs font-semibold bg-slate-900 text-white">
-              {isParceria ? "Plano Parceria (24 meses)" : "Plano Flex"}
+
+          <div className="text-left sm:text-right">
+            <div className="flex items-baseline gap-1 sm:justify-end">
+              <span className="text-xs font-semibold text-slate-400">R$</span>
+              <span className="text-2xl font-bold tracking-tight text-slate-900">
+                289,90
+              </span>
+              <span className="text-xs text-slate-500">/ mês</span>
+            </div>
+            <span className="text-[11px] text-slate-500 block mt-0.5">
+              + 1,99% processamento bancário (R$ 5,77) = <strong>R$ 295,67</strong>
             </span>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 text-xs">
           <div>
-            <span className="text-slate-400 block">CNPJ</span>
-            <span className="font-medium text-slate-800 mt-0.5 block font-mono">
-              {formatCnpj(tenant.cnpj)}
-            </span>
-          </div>
-          <div>
-            <span className="text-slate-400 block">Vencimento da Mensalidade</span>
+            <span className="text-slate-400 block text-[11px]">Vencimento da Mensalidade</span>
             <span className="font-semibold text-slate-900 mt-0.5 flex items-center gap-1">
               <Calendar className="h-3.5 w-3.5 text-slate-500" />
               <span>Todo dia {tenant.diaVencimento}</span>
             </span>
           </div>
           <div>
-            <span className="text-slate-400 block">Valor Mensal</span>
-            <span className="font-semibold text-slate-900 mt-0.5 block">
-              R$ 289,90 <span className="text-[11px] font-normal text-slate-500">(+1,99% = R$ 295,67)</span>
+            <span className="text-slate-400 block text-[11px]">Taxa de Implantação</span>
+            <span className={`font-semibold mt-0.5 block ${isParceria ? "text-emerald-700" : "text-slate-800"}`}>
+              {isParceria ? "R$ 0,00 (100% Isento — Economia R$ 490)" : "R$ 490,00 (Taxa única)"}
             </span>
           </div>
           <div>
-            <span className="text-slate-400 block">Taxa de Implantação</span>
-            <span className={`font-semibold mt-0.5 block ${isParceria ? "text-emerald-700" : "text-slate-800"}`}>
-              {isParceria ? "R$ 0,00 (100% Isento)" : "R$ 490,00 (Taxa única)"}
+            <span className="text-slate-400 block text-[11px]">Vigência Contratual</span>
+            <span className="font-semibold text-slate-900 mt-0.5 block">
+              {isParceria ? "24 meses (Renovação automática)" : "Mensal sem carência"}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Card em Destaque: PRÓXIMA FATURA (com dia 05/10 ou próximo vencimento) */}
-      <div className="bg-white border-2 border-slate-900 rounded-xl p-6 shadow-xs relative overflow-hidden">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+      {/* 2. PRÓXIMA FATURA (Destaque direto para pagamento) */}
+      <div className="bg-white border-2 border-slate-900 rounded-xl p-5 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div className="space-y-1">
-            <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-900 uppercase tracking-wider">
-              <Clock className="h-4 w-4 text-slate-700" />
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-900 uppercase tracking-wider">
+              <Clock className="h-3.5 w-3.5 text-slate-700" />
               <span>Próxima Fatura</span>
             </span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
                 {nextInvoicePayment?.vencimento || tenant.proximaFaturaData}
               </span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
                 Aguardando Pagamento
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              Mensalidade de Gestão Fiscal e Emissão de Notas da sua oficina.
+              Geração automática todo mês no dia {tenant.diaVencimento}.
             </p>
           </div>
 
-          <div className="text-left sm:text-right space-y-1 sm:space-y-0">
-            <span className="text-xs text-slate-400 block">Valor a pagar</span>
+          <div className="text-left sm:text-right">
+            <span className="text-xs text-slate-400 block">Total a pagar</span>
             <div className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
               R$ {nextInvoicePayment ? Number(nextInvoicePayment.valor).toFixed(2) : "295,67"}
             </div>
             <span className="text-[11px] text-slate-500 block">
-              R$ 289,90 líquido (+ 1,99% taxa de processamento)
+              R$ 289,90 líquido (+ 1,99% taxa Asaas)
             </span>
           </div>
         </div>
@@ -232,7 +225,7 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
         <div className="pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <p className="text-xs text-slate-600 flex items-center gap-1.5">
             <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0" />
-            <span>Pagamento via Pix libera sua conta e emissão fiscal na hora.</span>
+            <span>Pagamento via Pix libera sua conta e emissão fiscal instantaneamente.</span>
           </p>
 
           <div className="flex items-center gap-2">
@@ -241,9 +234,9 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
                 <button
                   onClick={() => handleOpenPix(nextInvoicePayment)}
                   type="button"
-                  className="px-4 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-xs font-semibold shadow-xs transition-colors cursor-pointer inline-flex items-center gap-2"
+                  className="px-4 py-2 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-xs font-semibold shadow-xs transition-colors cursor-pointer inline-flex items-center gap-1.5"
                 >
-                  <QrCode className="h-4 w-4 text-white" />
+                  <QrCode className="h-3.5 w-3.5 text-white" />
                   <span>Pagar via Pix</span>
                 </button>
                 {nextInvoicePayment.invoiceUrl && (
@@ -251,10 +244,10 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
                     href={nextInvoicePayment.invoiceUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-3.5 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-medium transition-colors inline-flex items-center gap-1.5"
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-medium transition-colors inline-flex items-center gap-1"
                   >
                     <span>Boleto / Fatura</span>
-                    <ExternalLink className="h-3.5 w-3.5 text-slate-400" />
+                    <ExternalLink className="h-3 w-3 text-slate-400" />
                   </a>
                 )}
               </>
@@ -271,15 +264,15 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
         </div>
       </div>
 
-      {/* Histórico / Faturas Recorrentes */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5">
-        <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
+      {/* 3. HISTÓRICO DE FATURAS (Tabela clara e limpa) */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+        <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-3">
           <div>
-            <h2 className="text-sm font-semibold text-slate-900">
+            <h2 className="text-sm font-bold text-slate-900">
               Histórico de Faturas
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Acompanhe todas as mensalidades e comprovantes gerados para o seu CNPJ.
+              Mensalidades geradas automaticamente com baixa via Pix ou Boleto.
             </p>
           </div>
         </div>
@@ -287,10 +280,10 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="border-b border-slate-100 text-[11px] text-slate-400 uppercase font-semibold">
+              <tr className="border-b border-slate-100 text-[10px] text-slate-400 uppercase font-semibold">
                 <th className="py-2.5 px-3">Vencimento</th>
                 <th className="py-2.5 px-3">Valor</th>
-                <th className="py-2.5 px-3">Forma de Pagamento</th>
+                <th className="py-2.5 px-3">Forma</th>
                 <th className="py-2.5 px-3">Status</th>
                 <th className="py-2.5 px-3 text-right">Ação</th>
               </tr>
@@ -315,8 +308,8 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
                           : p.billingType === "BOLETO"
                           ? "Boleto"
                           : p.billingType === "CREDIT_CARD"
-                          ? "Cartão de Crédito"
-                          : "Pix / Boleto / Cartão"}
+                          ? "Cartão"
+                          : "Pix / Boleto"}
                       </td>
                       <td className="py-3 px-3">
                         {isPaid ? (
@@ -340,7 +333,7 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
                             <button
                               onClick={() => handleOpenPix(p)}
                               type="button"
-                              className="px-2.5 py-1 rounded bg-slate-900 text-white hover:bg-slate-800 text-[11px] font-semibold transition-colors cursor-pointer flex items-center gap-1"
+                              className="px-2.5 py-1 rounded bg-slate-900 text-white hover:bg-slate-800 text-[11px] font-semibold transition-colors cursor-pointer inline-flex items-center gap-1"
                             >
                               <QrCode className="h-3 w-3" />
                               <span>Pagar Pix</span>
@@ -372,7 +365,7 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
                     R$ 295,67
                   </td>
                   <td className="py-3 px-3 text-slate-600">
-                    Pix / Boleto Bancário
+                    Pix / Boleto
                   </td>
                   <td className="py-3 px-3">
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
@@ -389,183 +382,24 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
         </div>
       </div>
 
-      {/* SOMENTE O PLANO ATUAL CONTRATADO (Pedido explícito do usuário) */}
-      <div>
-        <div className="mb-4">
-          <h2 className="text-base font-semibold text-slate-900">
-            Seu Plano Contratado
-          </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Condições comerciais ativas e configuradas para o seu CNPJ.
-          </p>
-        </div>
-
-        {isParceria ? (
-          /* Card Único: Plano Parceria (24 meses) */
-          <div className="bg-white rounded-xl p-6 border-2 border-slate-900 shadow-xs relative">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-              <div>
-                <span className="text-[11px] font-bold text-white bg-slate-900 px-2.5 py-1 rounded inline-block">
-                  SEU PLANO ATUAL
-                </span>
-                <h3 className="text-lg font-bold text-slate-900 mt-2">
-                  Plano Parceria
-                </h3>
-                <p className="text-xs text-slate-600 mt-1">
-                  Nós assumimos 100% do custo de implantação em troca de uma parceria de longo prazo de 24 meses.
-                </p>
-              </div>
-
-              <div className="text-left sm:text-right">
-                <div className="flex items-baseline gap-1 sm:justify-end">
-                  <span className="text-xs font-semibold text-slate-500">R$</span>
-                  <span className="text-3xl font-bold tracking-tight text-slate-900">
-                    289,90
-                  </span>
-                  <span className="text-xs text-slate-500">/ mês</span>
-                </div>
-                <span className="text-xs text-slate-500 block mt-0.5">
-                  Taxa de processamento (1,99%): <strong>+ R$ 5,77</strong> • Total: <strong>R$ 295,67</strong>
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-5 text-xs text-slate-600">
-              <div className="space-y-2.5">
-                <div className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                  <span>
-                    Taxa de implantação do servidor: <strong className="text-emerald-700 font-semibold">R$ 0,00 (100% Isento — Economia de R$ 490,00)</strong>
-                  </span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
-                  <span>Configuração e alinhamento de infraestrutura dedicados por nossa equipe</span>
-                </div>
-              </div>
-
-              <div className="space-y-2.5">
-                <div className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
-                  <span>Contrato de parceria com vigência e estabilidade de 24 meses</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
-                  <span>Geração automática da fatura todo mês no dia {tenant.diaVencimento}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* Card Único: Plano Flex (Sem fidelidade) */
-          <div className="bg-white rounded-xl p-6 border-2 border-slate-900 shadow-xs relative">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-              <div>
-                <span className="text-[11px] font-bold text-white bg-slate-900 px-2.5 py-1 rounded inline-block">
-                  SEU PLANO ATUAL
-                </span>
-                <h3 className="text-lg font-bold text-slate-900 mt-2">
-                  Plano Flex
-                </h3>
-                <p className="text-xs text-slate-600 mt-1">
-                  Liberdade total sem carência contratual, pagando a taxa única de configuração de entrada.
-                </p>
-              </div>
-
-              <div className="text-left sm:text-right">
-                <div className="flex items-baseline gap-1 sm:justify-end">
-                  <span className="text-xs font-semibold text-slate-500">R$</span>
-                  <span className="text-3xl font-bold tracking-tight text-slate-900">
-                    289,90
-                  </span>
-                  <span className="text-xs text-slate-500">/ mês</span>
-                </div>
-                <span className="text-xs text-slate-500 block mt-0.5">
-                  Taxa de processamento (1,99%): <strong>+ R$ 5,77</strong> • Total: <strong>R$ 295,67</strong>
-                </span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-5 text-xs text-slate-600">
-              <div className="space-y-2.5">
-                <div className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
-                  <span>
-                    Taxa única de implantação e setup: <strong className="text-slate-900 font-semibold">R$ 490,00</strong>
-                  </span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
-                  <span>Sem carência ou fidelidade de permanência contratual</span>
-                </div>
-              </div>
-
-              <div className="space-y-2.5">
-                <div className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
-                  <span>Acesso irrestrito a todas as funcionalidades fiscais</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <Check className="h-4 w-4 text-slate-900 shrink-0 mt-0.5" />
-                  <span>Renovação mensal automática</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Funcionalidades Incluídas */}
-      <div className="bg-slate-50 border border-slate-200 rounded-lg p-5">
-        <h3 className="text-xs font-semibold text-slate-900 uppercase tracking-wider">
-          O que está incluso em sua assinatura
-        </h3>
-        <p className="text-xs text-slate-500 mt-0.5 mb-4">
-          Independentemente do modelo de fidelidade, sua oficina conta com a suíte fiscal completa:
-        </p>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs text-slate-700">
-          {recursosPadrao.map((item, idx) => (
-            <div key={idx} className="flex items-start gap-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-slate-600 shrink-0 mt-1.5" />
-              <span>{item}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Contato Comercial */}
-      <div className="bg-white border border-slate-200 rounded-lg p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      {/* Suporte Direto e Atendimento (Discreto e Elegante) */}
+      <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">
-            Dúvidas sobre faturamento ou alteração de plano?
-          </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Nossa equipe técnica e comercial está disponível para esclarecer dúvidas sobre contratos e notas de serviço.
-          </p>
+          <span className="font-semibold text-slate-900 block">Dúvidas sobre sua assinatura ou faturas?</span>
+          <span className="text-slate-500">Nosso time técnico está à disposição no WhatsApp.</span>
         </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Link
-            href="/fechamento"
-            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
-          >
-            <FileText className="h-3.5 w-3.5" />
-            <span>Ver Fechamentos</span>
-          </Link>
-          <a
-            href={whatsappSuporteUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-md transition-colors"
-          >
-            <MessageCircle className="h-3.5 w-3.5" />
-            <span>Falar com Atendimento</span>
-          </a>
-        </div>
+        <a
+          href={whatsappSuporteUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium transition-colors whitespace-nowrap self-start sm:self-auto"
+        >
+          <MessageCircle className="h-3.5 w-3.5" />
+          <span>Falar com Atendimento</span>
+        </a>
       </div>
 
-      {/* Modal de Pagamento Pix Direto */}
+      {/* Modal de Pagamento Pix */}
       {selectedPayment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full p-5 space-y-4">
@@ -623,7 +457,7 @@ export function SubscriptionClientView({ tenant }: SubscriptionClientViewProps) 
                       onClick={handleCopyPix}
                       className="px-3 py-2 rounded bg-slate-900 text-white hover:bg-slate-800 text-xs font-semibold shrink-0 transition-colors cursor-pointer flex items-center gap-1"
                     >
-                      {copiedPix ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+                      {copiedPix ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5 text-white" />}
                       <span>{copiedPix ? "Copiado!" : "Copiar"}</span>
                     </button>
                   </div>
