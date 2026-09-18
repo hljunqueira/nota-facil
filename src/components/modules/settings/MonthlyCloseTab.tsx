@@ -15,6 +15,7 @@ import {
   AlertCircle,
   Smartphone,
   MessageCircle,
+  Mail,
 } from "lucide-react";
 import {
   getMonthlyCloseConfigAction,
@@ -49,10 +50,14 @@ export function MonthlyCloseTab() {
 
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+
+  const downloadUrl = `/api/contador/download?mes=${mes}&ano=${ano}`;
+  const mesNome = MESES.find((m) => m.value === mes)?.label || String(mes);
 
   const loadData = async () => {
     setLoadingConfig(true);
@@ -73,7 +78,7 @@ export function MonthlyCloseTab() {
       setHistory(hist || []);
     } catch (err: any) {
       console.error("[MonthlyCloseTab] Erro ao carregar dados:", err);
-      setErrorMessage("Erro ao carregar configurações de fechamento.");
+      setErrorMessage("Erro ao carregar dados do contador.");
     } finally {
       setLoadingConfig(false);
       setLoadingHistory(false);
@@ -84,7 +89,28 @@ export function MonthlyCloseTab() {
     loadData();
   }, []);
 
-  const handleTriggerClose = async (e: React.FormEvent) => {
+  // 1. Download Direto no Celular ou Computador
+  const handleDownloadDirect = () => {
+    setDownloading(true);
+    setErrorMessage(null);
+    try {
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.setAttribute("download", `Notas_Contador_${String(mes).padStart(2, "0")}_${ano}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setToastMessage("Download iniciado! O arquivo .ZIP está sendo salvo no seu aparelho.");
+    } catch {
+      setErrorMessage("Não foi possível iniciar o download automático.");
+    } finally {
+      setTimeout(() => setDownloading(false), 2000);
+    }
+  };
+
+  // 2. Disparo por E-mail
+  const handleSendEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setErrorMessage(null);
@@ -98,33 +124,33 @@ export function MonthlyCloseTab() {
       });
 
       if (res.success) {
-        setToastMessage(res.message);
+        setToastMessage(`Notas enviadas com sucesso para ${emailContador}!`);
         setTimeout(() => loadData(), 3000);
       }
     } catch (err: any) {
-      setErrorMessage(err.message || "Erro ao iniciar fechamento mensal.");
+      setErrorMessage(err.message || "Erro ao enviar notas para o contador.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleShareMobile = (zipUrl?: string) => {
-    const mesNome = MESES.find((m) => m.value === mes)?.label || mes;
-    const text = `📦 *Fechamento Fiscal ${mesNome}/${ano}*\n\nOlá! Segue o pacote fiscal com XMLs e relatórios de conferência contábil da oficina.\n\n${
-      zipUrl ? `📥 *Download do arquivo ZIP:* ${zipUrl}` : "O pacote foi processado no sistema."
-    }`;
+  // 3. Compartilhar / Enviar no WhatsApp
+  const handleShareWhatsApp = (customUrl?: string) => {
+    const url = customUrl || `${window.location.origin}${downloadUrl}`;
+    const text = `📦 *Envio de Notas Fiscais — ${mesNome}/${ano}*\n\nOlá! Segue o pacote compactado (.ZIP) com todas as notas fiscais autorizadas, DANFEs em PDF e relatório de conferência contábil da oficina.\n\n📥 *Link para Baixar o Arquivo:* ${url}`;
 
-    if (navigator.share) {
+    if (typeof navigator !== "undefined" && navigator.share) {
       navigator
         .share({
-          title: `Fechamento Fiscal ${mesNome}/${ano}`,
+          title: `Notas Fiscais ${mesNome}/${ano}`,
           text,
-          url: zipUrl || window.location.href,
+          url,
         })
-        .catch(() => null);
+        .catch(() => {
+          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+        });
     } else {
-      const waUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
-      window.open(waUrl, "_blank");
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
     }
   };
 
@@ -139,7 +165,7 @@ export function MonthlyCloseTab() {
           </div>
           <button
             onClick={() => setToastMessage(null)}
-            className="text-emerald-700 hover:text-emerald-900 font-bold"
+            className="text-emerald-700 hover:text-emerald-900 font-bold cursor-pointer"
           >
             ✕
           </button>
@@ -155,203 +181,256 @@ export function MonthlyCloseTab() {
           </div>
           <button
             onClick={() => setErrorMessage(null)}
-            className="text-rose-700 hover:text-rose-900 font-bold"
+            className="text-rose-700 hover:text-rose-900 font-bold cursor-pointer"
           >
             ✕
           </button>
         </div>
       )}
 
-      {/* Card de Disparo do Fechamento */}
+      {/* Card Principal: Enviar para o Contador */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
           <div>
             <div className="flex items-center gap-2">
-              <FileArchive className="w-5 h-5 text-primary" />
+              <Send className="w-5 h-5 text-primary" />
               <h2 className="text-base font-bold text-slate-900">
-                Fechamento Fiscal Mensal do Contador
+                Enviar Notas para o Contador
               </h2>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Gera automaticamente o pacote ZIP com todos os XMLs, PDFs de notas autorizadas e planilha CSV de conferência para a contabilidade.
+              Baixe o pacote (.ZIP) no celular ou computador, ou envie diretamente para a sua contabilidade por WhatsApp e e-mail.
             </p>
           </div>
         </div>
 
-        <form onSubmit={handleTriggerClose} className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                Mês de Referência *
-              </label>
-              <select
-                value={mes}
-                onChange={(e) => setMes(Number(e.target.value))}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-medium focus:bg-white transition-all cursor-pointer"
-              >
-                {MESES.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                Ano *
-              </label>
-              <input
-                type="number"
-                min={2020}
-                max={2035}
-                value={ano}
-                onChange={(e) => setAno(Number(e.target.value))}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-medium focus:bg-white transition-all"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                E-mail do Contador (Destino)
-              </label>
-              <input
-                type="email"
-                placeholder="fiscal@contabilidade.com"
-                value={emailContador}
-                onChange={(e) => setEmailContador(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:bg-white transition-all"
-              />
-              {contadorNome && (
-                <span className="text-[10px] text-slate-400 block mt-1">
-                  Contador: <strong>{contadorNome}</strong>
-                </span>
-              )}
-            </div>
+        {/* Seleção do Mês e Ano */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          <div>
+            <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
+              Mês de Referência *
+            </label>
+            <select
+              value={mes}
+              onChange={(e) => setMes(Number(e.target.value))}
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-medium focus:bg-white transition-all cursor-pointer"
+            >
+              {MESES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
-              <Smartphone className="w-3.5 h-3.5 text-slate-400" />
-              <span>
-                Se o seu WhatsApp estiver conectado, o contador também receberá a notificação instantânea pelo WhatsApp.
-              </span>
-            </p>
+          <div>
+            <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
+              Ano *
+            </label>
+            <input
+              type="number"
+              min={2020}
+              max={2035}
+              value={ano}
+              onChange={(e) => setAno(Number(e.target.value))}
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-medium focus:bg-white transition-all"
+            />
+          </div>
+        </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <button
-                type="submit"
-                disabled={submitting || loadingConfig}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-primary hover:bg-primaryDark text-white text-xs font-semibold shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-60"
-              >
-                {submitting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-                <span>{submitting ? "Processando..." : "Gerar e Enviar Fechamento"}</span>
-              </button>
+        {/* BOX 1: BAIXAR NO CELULAR OU COMPUTADOR (OPÇÃO EM DESTAQUE) */}
+        <div className="p-5 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                <Smartphone className="w-4 h-4 text-emerald-600" />
+                Opção 1: Baixar no Celular ou Computador
+              </span>
+              <p className="text-[11px] text-emerald-800 mt-0.5">
+                Gera o arquivo <strong>.ZIP</strong> com todos os XMLs, PDFs e planilha de conferência para salvar direto no seu dispositivo.
+              </p>
             </div>
+            <span className="self-start sm:self-auto text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full whitespace-nowrap">
+              Download Imediato
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2.5 pt-1">
+            <button
+              type="button"
+              onClick={handleDownloadDirect}
+              disabled={downloading}
+              className="flex-1 min-w-[220px] py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-60"
+            >
+              {downloading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              <span>Baixar no Celular ou Computador (.ZIP)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleShareWhatsApp()}
+              className="py-2.5 px-4 rounded-xl bg-white border border-emerald-300 hover:bg-emerald-100/60 text-emerald-800 font-bold text-xs shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap"
+            >
+              <MessageCircle className="w-4 h-4 text-emerald-600" />
+              <span>Enviar por WhatsApp</span>
+            </button>
+          </div>
+        </div>
+
+        {/* BOX 2: ENVIAR POR E-MAIL AO CONTADOR */}
+        <form onSubmit={handleSendEmail} className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <Mail className="w-4 h-4 text-primary" />
+              Opção 2: Enviar Diretamente por E-mail
+            </span>
+            {loadingConfig && (
+              <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Buscando cadastro...
+              </span>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold uppercase text-slate-600 mb-1">
+              E-mail do Contador
+            </label>
+            <input
+              type="email"
+              value={emailContador}
+              onChange={(e) => setEmailContador(e.target.value)}
+              placeholder="fiscal@contabilidade.com.br"
+              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-medium focus:border-primary transition-all"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">
+              {contadorNome
+                ? `Contador vinculado: ${contadorNome}`
+                : "Informe o e-mail da sua contabilidade para envio automático."}
+            </p>
+          </div>
+
+          <div className="flex justify-end pt-1">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold shadow-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-60"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Enviando e-mail...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 text-emerald-400" />
+                  <span>Disparar por E-mail</span>
+                </>
+              )}
+            </button>
           </div>
         </form>
       </div>
 
-      {/* Histórico dos Fechamentos Anteriores */}
+      {/* Histórico de Envios Anteriores */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-slate-400" />
-            <h3 className="font-bold text-xs text-slate-900">
-              Histórico de Fechamentos Enviados
+            <Clock className="w-4 h-4 text-slate-500" />
+            <h3 className="text-xs font-bold text-slate-800">
+              Histórico de Envios para a Contabilidade
             </h3>
           </div>
           <button
             onClick={loadData}
             disabled={loadingHistory}
-            className="p-1 text-slate-400 hover:text-slate-700 transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 cursor-pointer"
             title="Atualizar histórico"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loadingHistory ? "animate-spin" : ""}`} />
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-slate-100 text-[10px] text-slate-400 uppercase font-semibold bg-slate-50/50">
-                <th className="py-2.5 px-4">Data do Envio</th>
-                <th className="py-2.5 px-4">Mês/Ano</th>
-                <th className="py-2.5 px-4">Qtd. Notas</th>
-                <th className="py-2.5 px-4">Destinatário</th>
-                <th className="py-2.5 px-4 text-right">Ações Mobile</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {history.length > 0 ? (
-                history.map((h) => {
-                  const detalhe = (h.detalhe as any) || {};
-                  const mesAnoLabel = detalhe.mes && detalhe.ano ? `${detalhe.mes}/${detalhe.ano}` : h.entidadeId || "-";
-                  const zipUrl = detalhe.zipUrl;
+        {loadingHistory ? (
+          <div className="p-8 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            <span>Carregando histórico...</span>
+          </div>
+        ) : history.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-400">
+            Nenhum envio registrado ainda.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 text-xs">
+            {history.map((log) => {
+              const detalhe = (log.detalhe as any) || {};
+              const zipUrl = detalhe.zipUrl;
+              return (
+                <div
+                  key={log.id}
+                  className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/60 transition-colors"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-900 font-mono">
+                        Competência {detalhe.mesAno || log.entidadeId}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                        {log.acao === "FECHAMENTO_MENSAL_CONCLUIDO" ? "Concluído" : "Processando"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      {detalhe.totalNotas !== undefined
+                        ? `${detalhe.totalNotas} nota(s) incluída(s)`
+                        : "Notas empacotadas"}
+                      {detalhe.contadorEmail ? ` • Enviado para ${detalhe.contadorEmail}` : ""}
+                    </p>
+                    <span className="text-[10px] text-slate-400">
+                      {new Date(log.timestamp).toLocaleString("pt-BR")}
+                    </span>
+                  </div>
 
-                  return (
-                    <tr key={h.id} className="hover:bg-slate-50/60">
-                      <td className="py-3 px-4 text-slate-500">
-                        {new Date(h.timestamp).toLocaleString("pt-BR")}
-                      </td>
-                      <td className="py-3 px-4 font-semibold text-slate-900">
-                        {mesAnoLabel}
-                      </td>
-                      <td className="py-3 px-4 font-mono font-bold text-slate-700">
-                        {detalhe.totalNotas ?? "-"}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600 truncate max-w-[180px]">
-                        {detalhe.contadorEmail || "-"}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {zipUrl ? (
-                            <>
-                              <a
-                                href={zipUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors inline-flex items-center gap-1 text-[11px]"
-                                title="Baixar pacote ZIP"
-                              >
-                                <Download className="w-3.5 h-3.5 text-primary" />
-                                <span>Baixar ZIP</span>
-                              </a>
+                  <div className="flex items-center gap-2">
+                    {zipUrl ? (
+                      <a
+                        href={zipUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+                        title="Baixar cópia ZIP"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Baixar ZIP</span>
+                      </a>
+                    ) : (
+                      <button
+                        onClick={handleDownloadDirect}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+                        title="Baixar pacote"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Baixar ZIP</span>
+                      </button>
+                    )}
 
-                              <button
-                                onClick={() => handleShareMobile(zipUrl)}
-                                type="button"
-                                className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors inline-flex items-center gap-1 text-[11px] cursor-pointer"
-                                title="Compartilhar pelo WhatsApp ou celular"
-                              >
-                                <Share2 className="w-3.5 h-3.5" />
-                                <span>WhatsApp</span>
-                              </button>
-                            </>
-                          ) : (
-                            <span className="text-slate-400 italic text-[11px]">
-                              Concluído
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={5} className="py-8 text-center text-xs text-slate-400">
-                    Nenhum fechamento registrado até o momento.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                    <button
+                      onClick={() => handleShareWhatsApp(zipUrl)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs transition-colors cursor-pointer"
+                      title="Compartilhar no WhatsApp"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>WhatsApp</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

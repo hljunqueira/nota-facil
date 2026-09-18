@@ -14,6 +14,7 @@ import {
   Loader2,
   Sparkles,
   Save,
+  Send,
   CalendarCheck2,
   MessageCircle,
   Lock,
@@ -332,7 +333,7 @@ function ConfiguracoesContent() {
           { id: "cfop", label: "Regras de CFOP", icon: FileText },
           { id: "fiscal", label: "Parâmetros Fiscais", icon: ShieldCheck },
           { id: "contatos", label: "Destinatários & Contador", icon: Mail },
-          { id: "fechamento", label: "Fechamento Mensal", icon: CalendarCheck2 },
+          { id: "fechamento", label: "Enviar ao Contador", icon: Send },
           { id: "whatsapp", label: "Conexão WhatsApp", icon: MessageCircle },
         ].map((tab) => (
           <button

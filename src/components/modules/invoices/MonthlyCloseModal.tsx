@@ -6,12 +6,15 @@ import {
   FileArchive,
   Mail,
   Calendar,
+  Download,
+  Share2,
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Sparkles,
   ShieldCheck,
   Send,
+  Smartphone,
+  MessageCircle,
 } from "lucide-react";
 import {
   enqueueMonthlyCloseAction,
@@ -45,58 +48,117 @@ export function MonthlyCloseModal({
   onSuccess,
 }: MonthlyCloseModalProps) {
   const now = new Date();
-  // Padrão: mês anterior se não for janeiro, senão dezembro do ano anterior
   const defaultMes = now.getMonth() === 0 ? 12 : now.getMonth();
   const defaultAno = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
 
   const [mes, setMes] = useState<number>(defaultMes);
   const [ano, setAno] = useState<number>(defaultAno);
   const [emailContador, setEmailContador] = useState<string>("");
+  const [contadorNome, setContadorNome] = useState<string | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingEmail, setSubmittingEmail] = useState(false);
+  const [downloadingZip, setDownloadingZip] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setError(null);
+      setSuccessMsg(null);
       setLoadingConfig(true);
       getMonthlyCloseConfigAction()
         .then((cfg) => {
           if (cfg.contadorEmail) {
             setEmailContador(cfg.contadorEmail);
           }
+          if (cfg.contadorNome) {
+            setContadorNome(cfg.contadorNome);
+          }
         })
-        .catch((err) => console.error("Erro ao carregar e-mail do contador:", err))
+        .catch((err) => console.error("Erro ao carregar dados do contador:", err))
         .finally(() => setLoadingConfig(false));
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const downloadUrl = `/api/contador/download?mes=${mes}&ano=${ano}`;
+  const mesNome = MESES.find((m) => m.value === mes)?.label || String(mes);
+
+  // 1. Download Direto no Celular ou Computador
+  const handleDownloadDirect = () => {
+    setDownloadingZip(true);
+    setError(null);
+    try {
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.setAttribute("download", `Notas_Contador_${String(mes).padStart(2, "0")}_${ano}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setSuccessMsg("Download iniciado! O arquivo .ZIP está sendo salvo no seu aparelho.");
+      setTimeout(() => {
+        if (onSuccess) onSuccess("Download do pacote de notas iniciado com sucesso!");
+      }, 1500);
+    } catch (err: any) {
+      setError("Não foi possível iniciar o download automático.");
+    } finally {
+      setTimeout(() => setDownloadingZip(false), 2000);
+    }
+  };
+
+  // 2. Enviar ou Compartilhar no WhatsApp
+  const handleShareWhatsApp = () => {
+    const fullUrl = `${window.location.origin}${downloadUrl}`;
+    const textMsg =
+      `*Nota Fácil — Envio de Notas Fiscais*\n` +
+      `📅 *Competência:* ${mesNome} / ${ano}\n` +
+      `📁 Segue o link direto para baixar o pacote de notas fiscais (.ZIP):\n${fullUrl}\n\n` +
+      `_Contém todos os XMLs autorizados, DANFEs em PDF e relatório para importação contábil._`;
+
+    if (typeof navigator !== "undefined" && navigator.share) {
+      navigator
+        .share({
+          title: `Notas Fiscais - ${mesNome}/${ano}`,
+          text: textMsg,
+          url: fullUrl,
+        })
+        .catch(() => {
+          window.open(`https://wa.me/?text=${encodeURIComponent(textMsg)}`, "_blank");
+        });
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(textMsg)}`, "_blank");
+    }
+  };
+
+  // 3. Enviar por E-mail
+  const handleSendEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitting(true);
+    if (!emailContador.trim()) {
+      setError("Por favor, digite o e-mail do contador.");
+      return;
+    }
+
+    setSubmittingEmail(true);
     setError(null);
 
     try {
-      const res = await enqueueMonthlyCloseAction({
+      await enqueueMonthlyCloseAction({
         mes,
         ano,
-        contadorEmail: emailContador.trim() || undefined,
+        contadorEmail: emailContador.trim(),
       });
 
+      setSuccessMsg(`Pacote de notas enviado com sucesso para ${emailContador}!`);
       if (onSuccess) {
-        onSuccess(
-          `Fechamento de ${String(mes).padStart(2, "0")}/${ano} agendado com sucesso! O arquivo .ZIP será enviado para ${
-            emailContador || "o e-mail do contador"
-          }.`
-        );
+        onSuccess(`Notas de ${mesNome}/${ano} enviadas para ${emailContador}!`);
       }
-      onClose();
+      setTimeout(() => onClose(), 2000);
     } catch (err: any) {
-      setError(err.message || "Falha ao iniciar fechamento mensal.");
+      setError(err.message || "Falha ao enviar e-mail para o contador.");
     } finally {
-      setSubmitting(false);
+      setSubmittingEmail(false);
     }
   };
 
@@ -104,23 +166,23 @@ export function MonthlyCloseModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
         {/* Modal Header */}
-        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-              <FileArchive className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+              <Send className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-base font-bold text-ink">
-                Fechar Mês do Contador (.ZIP)
+                Enviar para o Contador
               </h2>
               <p className="text-xs text-slate-500">
-                Empacotamento automático de XMLs, DANFEs e relatório fiscal
+                Baixe no celular/computador ou envie os XMLs e PDFs diretamente
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            disabled={submitting}
+            disabled={submittingEmail}
             className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -128,11 +190,18 @@ export function MonthlyCloseModal({
         </div>
 
         {/* Modal Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <div className="p-6 space-y-5">
           {error && (
             <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {successMsg && (
+            <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{successMsg}</span>
             </div>
           )}
 
@@ -141,13 +210,13 @@ export function MonthlyCloseModal({
             <div>
               <label className="text-xs font-semibold text-ink mb-1.5 flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span>Mês de Competência</span>
+                <span>Mês das Notas</span>
               </label>
               <select
                 value={mes}
                 onChange={(e) => setMes(Number(e.target.value))}
-                disabled={submitting}
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 text-xs font-medium text-ink bg-white focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all cursor-pointer"
+                disabled={submittingEmail}
+                className="w-full h-10 px-3 rounded-xl border border-slate-200 text-xs font-semibold text-ink bg-white focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all cursor-pointer"
               >
                 {MESES.map((m) => (
                   <option key={m.value} value={m.value}>
@@ -164,8 +233,8 @@ export function MonthlyCloseModal({
               <select
                 value={ano}
                 onChange={(e) => setAno(Number(e.target.value))}
-                disabled={submitting}
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 text-xs font-medium text-ink bg-white focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all cursor-pointer"
+                disabled={submittingEmail}
+                className="w-full h-10 px-3 rounded-xl border border-slate-200 text-xs font-semibold text-ink bg-white focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all cursor-pointer"
               >
                 {[2026, 2025, 2024].map((y) => (
                   <option key={y} value={y}>
@@ -176,76 +245,112 @@ export function MonthlyCloseModal({
             </div>
           </div>
 
-          {/* E-mail da Contabilidade */}
-          <div>
-            <label className="text-xs font-semibold text-ink mb-1.5 flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-slate-400" />
-                <span>E-mail do Contador</span>
+          {/* OPÇÃO 1: BAIXAR NO CELULAR OU COMPUTADOR (DESTAQUE) */}
+          <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200/80 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                <Smartphone className="w-4 h-4 text-emerald-600" />
+                Opção 1: Baixar no Aparelho
+              </span>
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                Download Imediato
+              </span>
+            </div>
+            <p className="text-[11px] text-emerald-900/80 leading-relaxed">
+              Baixa o arquivo compactado <strong>.ZIP</strong> com todos os XMLs, PDFs e Relatório no seu celular ou computador.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleDownloadDirect}
+                disabled={downloadingZip}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-60"
+              >
+                {downloadingZip ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                <span>Baixar no Celular ou Computador (.ZIP)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleShareWhatsApp}
+                title="Compartilhar no WhatsApp"
+                className="py-2.5 px-3.5 rounded-xl bg-white border border-emerald-300 hover:bg-emerald-100/50 text-emerald-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs whitespace-nowrap"
+              >
+                <MessageCircle className="w-4 h-4 text-emerald-600" />
+                <span>WhatsApp</span>
+              </button>
+            </div>
+          </div>
+
+          {/* OPÇÃO 2: ENVIAR POR E-MAIL */}
+          <form onSubmit={handleSendEmail} className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-ink flex items-center gap-1.5">
+                <Mail className="w-4 h-4 text-primary" />
+                Opção 2: Enviar por E-mail ao Contador
               </span>
               {loadingConfig && (
                 <span className="text-[10px] text-slate-400 flex items-center gap-1">
                   <Loader2 className="w-3 h-3 animate-spin" />
-                  Buscando cadastro...
+                  Buscando...
                 </span>
               )}
-            </label>
-            <input
-              type="email"
-              value={emailContador}
-              onChange={(e) => setEmailContador(e.target.value)}
-              placeholder="ex: fiscal@contabilidade.com.br"
-              disabled={submitting}
-              className="w-full h-10 px-3.5 rounded-xl border border-slate-200 text-xs text-ink placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-            />
-            <p className="text-[11px] text-slate-400 mt-1">
-              O pacote .ZIP com todos os XMLs e PDFs autorizados será enviado diretamente para este e-mail.
-            </p>
-          </div>
-
-          {/* Card explicativo */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
-            <div className="flex items-center gap-2 text-xs font-bold text-ink">
-              <ShieldCheck className="w-4 h-4 text-primary" />
-              <span>O que está incluído no pacote:</span>
             </div>
-            <ul className="text-[11px] text-slate-600 space-y-1 list-disc pl-5">
-              <li>Pasta <code>xml/</code> com todos os arquivos XMLs autorizados</li>
-              <li>Pasta <code>pdf/</code> com todos os DANFEs oficiais em PDF</li>
-              <li>Arquivo <code>Relatorio_Fiscal.csv</code> pronto para importação contábil</li>
-              <li>Cópia de segurança salva na nuvem (Cloudflare R2)</li>
-            </ul>
-          </div>
 
-          {/* Modal Footer */}
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-all cursor-pointer"
-            >
-              Cancelar
-            </button>
+            <div>
+              <input
+                type="email"
+                value={emailContador}
+                onChange={(e) => setEmailContador(e.target.value)}
+                placeholder="ex: fiscal@contabilidade.com.br"
+                disabled={submittingEmail}
+                className="w-full h-10 px-3.5 rounded-xl border border-slate-200 text-xs text-ink placeholder:text-slate-400 bg-white focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">
+                {contadorNome ? `Contador cadastrado: ${contadorNome}` : "Digite o e-mail da sua contabilidade."}
+              </p>
+            </div>
+
             <button
               type="submit"
-              disabled={submitting}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary hover:bg-primaryDark text-white text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              disabled={submittingEmail}
+              className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-60"
             >
-              {submitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Enfileirando fechamento...</span>
-                </>
+              {submittingEmail ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <>
-                  <Send className="w-4 h-4" />
-                  <span>Gerar Fechamento e Enviar (.ZIP)</span>
-                </>
+                <Send className="w-4 h-4 text-emerald-400" />
               )}
+              <span>Disparar por E-mail</span>
             </button>
+          </form>
+
+          {/* Card explicativo */}
+          <div className="p-3.5 rounded-2xl bg-slate-100/70 border border-slate-200/60 space-y-1.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-ink">
+              <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+              <span>O que vai no pacote:</span>
+            </div>
+            <p className="text-[11px] text-slate-600">
+              Arquivos XMLs autorizados pela SEFAZ, DANFEs em PDF de cada nota e a planilha de resumo para o contador importar no sistema dele.
+            </p>
           </div>
-        </form>
+        </div>
+
+        {/* Modal Footer */}
+        <div className="p-4 border-t border-slate-100 flex items-center justify-end bg-slate-50/50">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-white text-xs font-semibold text-slate-700 transition-all cursor-pointer"
+          >
+            Fechar
+          </button>
+        </div>
       </div>
     </div>
   );

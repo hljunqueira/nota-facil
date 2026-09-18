@@ -173,8 +173,8 @@ export default function NotasPage() {
             href="/configuracoes?tab=fechamento"
             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-semibold transition-all cursor-pointer shadow-xs"
           >
-            <FileArchive className="w-4 h-4 text-emerald-400" />
-            <span>Fechamento Mensal (.ZIP)</span>
+            <Send className="w-4 h-4 text-emerald-400" />
+            <span>Enviar para Contador</span>
           </Link>
           <button
             onClick={() => setShowImportModal(true)}

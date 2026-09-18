@@ -21,6 +21,7 @@ import {
   ArrowRight,
   Download,
   FileArchive,
+  Send,
 } from "lucide-react";
 import { getDashboardDataAction, DashboardMetrics } from "@/actions/dashboard";
 import { getInversionPreviewAction } from "@/actions/invoices";
@@ -187,8 +188,8 @@ export default function DashboardPage() {
             onClick={() => setShowMonthlyCloseModal(true)}
             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-semibold transition-all cursor-pointer shadow-xs"
           >
-            <FileArchive className="w-4 h-4 text-emerald-400" />
-            <span>Fechar Mês (.ZIP)</span>
+            <Send className="w-4 h-4 text-emerald-400" />
+            <span>Enviar para Contador</span>
           </button>
           <button
             onClick={() => setShowImportModal(true)}
