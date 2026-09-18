@@ -1,13 +1,53 @@
 import { prismaAdmin } from "@/lib/prismaAdmin";
 
 function getAsaasApiKey(): string {
-  const raw = process.env.ASAAS_API_KEY || "";
-  return raw.replace(/^["']|["']$/g, "").trim();
+  let key = process.env.ASAAS_API_KEY || "";
+  key = key.replace(/^["']|["']$/g, "").trim();
+
+  // Se o Next.js / @next/env zerou a chave por causa da interpolação de $,
+  // lê diretamente do arquivo .env sem interpolação
+  if (!key) {
+    try {
+      const fs = require("fs");
+      const path = require("path");
+      const envPaths = [
+        path.join(process.cwd(), ".env"),
+        path.join(process.cwd(), ".env.production"),
+        path.join(process.cwd(), ".env.local"),
+        "/opt/notafacil/.env",
+        "/app/.env",
+      ];
+      for (const p of envPaths) {
+        if (fs.existsSync(p)) {
+          const content = fs.readFileSync(p, "utf8");
+          const match = content.match(/ASAAS_API_KEY\s*=\s*["']?([^"'\r\n]+)["']?/);
+          if (match && match[1]) {
+            let extracted = match[1].trim();
+            if (extracted.startsWith("$$")) {
+              extracted = extracted.substring(1); // Converte $$ em $
+            }
+            if (extracted) {
+              key = extracted;
+              break;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("[AsaasService] Erro ao ler .env diretamente:", e);
+    }
+  }
+
+  return key;
 }
 
 function getAsaasApiUrl(): string {
-  const raw = process.env.ASAAS_API_URL || "https://api.asaas.com/v3";
-  return raw.replace(/^["']|["']$/g, "").trim();
+  let url = process.env.ASAAS_API_URL || "";
+  url = url.replace(/^["']|["']$/g, "").trim();
+  if (!url) {
+    url = "https://api.asaas.com/v3";
+  }
+  return url;
 }
 
 // Valor base da mensalidade R$ 289,90 + taxa de gateway de 1,99% (R$ 5,77) = R$ 295,67
