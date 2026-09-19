@@ -133,33 +133,38 @@ export async function parseDanfePdf(
   normalizedText = normalizedText.replace(/CN\s*\n\s*ID/g, "CN");
   normalizedText = normalizedText.replace(/(5901\s+[A-Z]{1,4})\s*\n\s*([\d\.,]+)/g, "$1 $2");
 
-  // Regex robusta para capturar a linha de produto do DANFE:
-  // [Código] [Descrição] [NCM 8 dig] [CST 3 dig] [CFOP 4 dig] [UN 1-4 carac] [Qtd] [Vl Unit] [Vl Total]
-  const itemRegex = /(?:^|\n)([A-Z0-9\-\.\/]{3,30})\s+([A-Z0-9\s\-\.\/\:\,]+?)\s+(\d{8})\s+(\d{3})\s+(\d{4})\s+([A-Z]{1,4})\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)/gm;
+  // Regex robusta e flexível para capturar a linha de produto do DANFE:
+  // [Código] [Descrição] [NCM 8 dig] [CST 3 dig] [CFOP 4 dig] [UN opcional] [Qtd] [Vl Unit] [Vl Total]
+  const itemRegex = /(?:^|\n)([A-Z0-9\-\.\/]{3,30})\s+([A-Z0-9\s\-\.\/\:\,]+?)\s+(\d{8})\s+(\d{3})\s+(\d{4})\s+(?:([A-Z]{1,4})\s+)?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)/gm;
 
   const itens: ParsedNfeItem[] = [];
   let itemMatch;
 
   while ((itemMatch = itemRegex.exec(normalizedText)) !== null) {
-    const codigo = itemMatch[1].trim();
-    const descricaoRaw = itemMatch[2].trim().replace(/\s+/g, " ");
+    let codigo = itemMatch[1].trim();
+    let descricao = itemMatch[2].trim().replace(/\s+/g, " ");
     const ncm = itemMatch[3].trim();
-    // CST: itemMatch[4]
     const cfop = itemMatch[5].trim();
-    const unidade = itemMatch[6].trim();
+    let unidade = itemMatch[6] ? itemMatch[6].trim().toUpperCase() : "UN";
     const quantidade = parseFloat(itemMatch[7].replace(/\./g, "").replace(",", "."));
     const valorUnitario = parseFloat(itemMatch[8].replace(/\./g, "").replace(",", "."));
     const valorTotal = parseFloat(itemMatch[9].replace(/\./g, "").replace(",", "."));
 
-    // Higieniza descrição removendo sujeiras de cabeçalho acidentais
-    let descricao = descricaoRaw;
+    // Higieniza código e descrição removendo sujeiras de cabeçalho ou delimitadores da página
+    codigo = codigo.replace(/^(?:DADOS\s+ADICIONAIS|DADOS\s+DOS\s+PRODUTOS|DADOS)\s*(?:ID)?\s*/i, "").trim();
+    descricao = descricao.replace(/^(?:DADOS\s+ADICIONAIS|DADOS\s+DOS\s+PRODUTOS|DADOS)\s*(?:ID)?\s*/i, "").trim();
     if (descricao.includes("DADOS DO PRODUTO")) {
       descricao = descricao.split("DADOS DO PRODUTO").pop()?.trim() || descricao;
     }
 
+    // Se unidade veio como "ID" (resíduo de coluna interna de layout), normaliza para UN
+    if (unidade === "ID" || !unidade) {
+      unidade = "UN";
+    }
+
     itens.push({
       numeroItem: itens.length + 1,
-      codigo,
+      codigo: codigo || `ITEM-${itens.length + 1}`,
       descricao: descricao || `Item ${codigo}`,
       ncm,
       cfop,
@@ -178,9 +183,9 @@ export async function parseDanfePdf(
     valorTotal = parseFloat(valorRodapeMatch[1].replace(/\./g, "").replace(",", "."));
   }
 
-  // Se não encontrou o total no rodapé ou for 0, calcula com exatidão pela soma dos itens extraídos
-  const somaItens = itens.reduce((acc, it) => acc + it.valorTotal, 0);
-  if (valorTotal === 0 || Math.abs(valorTotal - somaItens) > 0.05) {
+  // Se a soma dos itens for maior (evita capturar subtotais intermediários de folhas 1/2) ou se valor for 0, usa a soma dos itens extraídos
+  const somaItens = itens.reduce((acc, it) => acc + (it.valorTotal || 0), 0);
+  if (valorTotal === 0 || somaItens > valorTotal || Math.abs(valorTotal - somaItens) > 0.05) {
     if (somaItens > 0) {
       valorTotal = parseFloat(somaItens.toFixed(2));
     }

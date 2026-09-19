@@ -7,6 +7,88 @@
 import { createTenantPrisma } from "@/lib/prisma";
 import { prismaAdmin } from "@/lib/prismaAdmin";
 
+/**
+ * Determina se um item de remessa é produto principal de vestuário/confecção
+ * ou se é aviamento secundário / insumo fracionado (linhas, zíperes, elásticos, etiquetas, RFID).
+ */
+export function isVestuarioItem(item: { ncm?: string; descricao?: string; unidade?: string }): boolean {
+  const ncm = (item.ncm || "").replace(/\D/g, "");
+  const desc = (item.descricao || "").toUpperCase();
+  const un = (item.unidade || "").toUpperCase();
+
+  // NCMs que são inequivocamente aviamentos/insumos e NUNCA peças de vestuário
+  const isNcmAviamento =
+    ncm.startsWith("9607") || // zíperes
+    ncm.startsWith("9606") || // botões
+    ncm.startsWith("5807") || // etiquetas tecidas/impressas
+    ncm.startsWith("8523") || // tags RFID / smart tags
+    ncm.startsWith("5401") || // linhas de costura sintéticas
+    ncm.startsWith("5402") || // fios sintéticos/texturizados
+    ncm.startsWith("5508") || // linhas de costura descontinuadas
+    ncm.startsWith("5806") || // fitas, elásticos
+    ncm.startsWith("3926") || // plásticos, presilhas
+    ncm.startsWith("3923") || // sacos plásticos
+    ncm.startsWith("4821") || // etiquetas de papel/cartão
+    ncm.startsWith("5604") || // cordões de borracha
+    ncm.startsWith("5607");   // cordéis e cordas
+
+  if (isNcmAviamento) return false;
+
+  // Palavras-chave inequívocas de aviamentos/insumos na descrição
+  const termosAviamento = [
+    "ETIQUETA",
+    "RFID",
+    "LINHA",
+    "FIO ",
+    "FIO 100%",
+    "ZIPER",
+    "ZÍPER",
+    "ELASTICO",
+    "ELÁSTICO",
+    "BOTAO",
+    "BOTÃO",
+    "ENTRETELA",
+    "FITA",
+    "CADARCO",
+    "CADARÇO",
+    "VELCRO",
+    "COLCHETE",
+    "TAG",
+    "CABIDE",
+    "SACO",
+    "EMBALAGEM",
+    "RETALHO",
+    "CORDAO",
+    "CORDÃO",
+    "ILHOS",
+    "ILHÓS",
+  ];
+
+  if (termosAviamento.some((termo) => desc.includes(termo))) {
+    return false;
+  }
+
+  // Unidades típicas de matéria-prima fracionada/contínua e não peça acabada (ex: Metro, Quilo, Rolo)
+  if (["M", "MT", "MTR", "METRO", "KG", "KILOGRAMA", "RL", "ROLO"].includes(un)) {
+    return false;
+  }
+
+  // Se tem NCM dos capítulos de confecção de vestuário:
+  // 61: Vestuário de malha (vestidos, camisetas, blusas, saias, shorts, calças, etc.)
+  // 62: Vestuário exceto malha (vestidos tecido plano, camisas, calças, etc.)
+  // 63: Outros artefatos têxteis confeccionados
+  if (ncm.startsWith("61") || ncm.startsWith("62") || ncm.startsWith("63")) {
+    return true;
+  }
+
+  // Se unidade é UN ou PC e não é aviamento:
+  if (["UN", "PC", "PÇA", "PEC", "PECA", "PEÇA"].includes(un)) {
+    return true;
+  }
+
+  return false;
+}
+
 export interface InvertedItem {
   numeroItem: number;
   codigo: string;
@@ -83,6 +165,7 @@ export async function prepareInvoiceInversion(
 
   let totalInsumos = 0;
   let totalQtd = 0;
+  let totalPecasVestuario = 0;
 
   const itensRetorno: InvertedItem[] = itensEntrada.map((item, idx) => {
     const cfopIn = (item.cfop || "5901").replace(/\D/g, "");
@@ -97,6 +180,9 @@ export async function prepareInvoiceInversion(
 
     totalInsumos += itemTotal;
     totalQtd += qtd;
+    if (isVestuarioItem(item)) {
+      totalPecasVestuario += qtd;
+    }
 
     return {
       numeroItem: idx + 1,
@@ -137,7 +223,7 @@ export async function prepareInvoiceInversion(
       },
       itensRetorno,
       totalInsumosRetorno: totalInsumos,
-      quantidadeTotalPecas: totalQtd,
+      quantidadeTotalPecas: totalPecasVestuario > 0 ? totalPecasVestuario : totalQtd,
       cfopMap,
     },
   };
@@ -179,6 +265,7 @@ export async function prepareBatchInvoiceInversion(
 
   let totalInsumos = 0;
   let totalQtd = 0;
+  let totalPecasVestuario = 0;
   let itemNum = 1;
   const itensRetorno: InvertedItem[] = [];
   const chavesReferenciadas: string[] = [];
@@ -201,6 +288,9 @@ export async function prepareBatchInvoiceInversion(
 
       totalInsumos += itemTotal;
       totalQtd += qtd;
+      if (isVestuarioItem(item)) {
+        totalPecasVestuario += qtd;
+      }
 
       itensRetorno.push({
         numeroItem: itemNum++,
@@ -244,7 +334,7 @@ export async function prepareBatchInvoiceInversion(
       },
       itensRetorno,
       totalInsumosRetorno: totalInsumos,
-      quantidadeTotalPecas: totalQtd,
+      quantidadeTotalPecas: totalPecasVestuario > 0 ? totalPecasVestuario : totalQtd,
       cfopMap,
       chavesReferenciadas,
     },

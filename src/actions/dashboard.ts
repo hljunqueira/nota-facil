@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { createTenantPrisma } from "@/lib/prisma";
 import { prismaAdmin } from "@/lib/prismaAdmin";
 import { TipoNota, StatusNota } from "@prisma/client";
+import { isVestuarioItem } from "@/lib/services/inversion";
 
 export type PeriodoFiltro =
   | "hoje"
@@ -501,7 +502,7 @@ export async function getDashboardDataAction(
   });
 
   // 6. Previsão de Receita na Linha de Produção (FlyERP)
-  // Remessas (5901) recebidas nos últimos 45 dias que ainda não tiveram cobrança (5124) emitida
+  // Remessas (5901) recebidas nos últimos 45 dias que ainda não tiveram cobrança (5124) emitida e autorizada
   const remessasEntrada = await tenantPrisma.invoice.findMany({
     where: {
       tipo: TipoNota.ENTRADA,
@@ -515,6 +516,7 @@ export async function getDashboardDataAction(
       chaveAcesso: true,
       rawJson: true,
       valorTotal: true,
+      partnerId: true,
     },
   });
 
@@ -522,6 +524,7 @@ export async function getDashboardDataAction(
     where: {
       tipo: TipoNota.SAIDA,
       modalidadeEmissao: "COBRANCA_INDUSTRIALIZACAO",
+      status: StatusNota.AUTORIZADA,
     },
     select: {
       chaveNfeReferenciada: true,
@@ -540,25 +543,55 @@ export async function getDashboardDataAction(
   let quantidadePecasEmLinha = 0;
   let valorEstimadoLinha = 0;
 
-  // Preço médio histórico por peça da oficina (fallback para R$ 35,00)
-  let precoMedioPeca = 35.0;
-  if (todasCobrancasEmAberto.length > 0) {
+  // Preço por peça da oficina:
+  // 1. Tenta obter do histórico de cobranças 5124 autorizadas (média ponderada real)
+  // 2. Se não houver cobranças anteriores, busca do cadastro de preços (PartnerPriceHistory)
+  // 3. Fallback: R$ 40,00 (padrão de mercado para confecção/costura de vestidos conforme espelho RITMI)
+  let precoMedioPeca = 40.0;
+
+  const historicoCobrancasAutorizadas = await tenantPrisma.invoice.findMany({
+    where: {
+      tipo: TipoNota.SAIDA,
+      modalidadeEmissao: "COBRANCA_INDUSTRIALIZACAO",
+      status: StatusNota.AUTORIZADA,
+    },
+    take: 20,
+    orderBy: { dataEmissao: "desc" },
+    select: {
+      rawJson: true,
+      valorTotal: true,
+    },
+  });
+
+  if (historicoCobrancasAutorizadas.length > 0) {
     let somaValores = 0;
     let somaPecas = 0;
-    for (const cob of todasCobrancasEmAberto.slice(0, 10)) {
+    for (const cob of historicoCobrancasAutorizadas) {
       const raw: any = cob.rawJson || {};
-      const itens = raw?.focusPayload?.itens || [];
+      const itens = raw?.focusPayload?.itens || raw?.itens || [];
       for (const it of itens) {
-        const q = Number(it.quantidade_comercial || 0);
-        const v = Number(it.valor_total || 0);
+        const q = Number(it.quantidade_comercial || it.quantidade || 0);
+        const v = Number(it.valor_total || it.valorTotal || 0);
         if (q > 0 && v > 0) {
           somaPecas += q;
           somaValores += v;
         }
       }
+      if (somaPecas === 0 && Number(cob.valorTotal) > 0) {
+        somaValores += Number(cob.valorTotal);
+      }
     }
     if (somaPecas > 0 && somaValores > 0) {
       precoMedioPeca = Math.round((somaValores / somaPecas) * 100) / 100;
+    }
+  } else {
+    const precosCadastrados = await tenantPrisma.partnerPriceHistory.findMany({
+      take: 10,
+      select: { valorUnitario: true },
+    });
+    if (precosCadastrados.length > 0) {
+      const soma = precosCadastrados.reduce((acc, p) => acc + Number(p.valorUnitario), 0);
+      precoMedioPeca = Math.round((soma / precosCadastrados.length) * 100) / 100;
     }
   }
 
@@ -568,13 +601,21 @@ export async function getDashboardDataAction(
       quantidadeRemessasEmLinha++;
       const raw: any = rem.rawJson || {};
       const itens = raw?.itens || [];
-      let pecasRemessa = 0;
+      let pecasVestuario = 0;
+      let totalQtdGeral = 0;
+
       for (const it of itens) {
-        pecasRemessa += Number(it.quantidade || it.quantidade_comercial || 0);
+        const q = Number(it.quantidade || it.quantidade_comercial || 0);
+        totalQtdGeral += q;
+        if (isVestuarioItem(it)) {
+          pecasVestuario += q;
+        }
       }
-      if (pecasRemessa === 0) pecasRemessa = 100; // Padrão estimado se não detalhado no XML
-      quantidadePecasEmLinha += pecasRemessa;
-      valorEstimadoLinha += pecasRemessa * precoMedioPeca;
+
+      // Prioriza a quantidade de peças principais de vestuário; se nota for sem detalhamento, faz fallback
+      const pecasEfetivas = pecasVestuario > 0 ? pecasVestuario : (totalQtdGeral > 0 ? totalQtdGeral : 100);
+      quantidadePecasEmLinha += pecasEfetivas;
+      valorEstimadoLinha += pecasEfetivas * precoMedioPeca;
     }
   }
 

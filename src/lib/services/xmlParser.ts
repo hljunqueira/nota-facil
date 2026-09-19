@@ -94,7 +94,7 @@ export function parseNfeXml(xmlContent: string): ParsedNfe {
 
   // 6. Itens (<det nItem="...">)
   const itens: ParsedNfeItem[] = [];
-  const detRegex = /<(?:\\w+:)?det[^>]*nItem=["'](\d+)["'][^>]*>([\s\S]*?)<\/(?:\\w+:)?det>/gi;
+  const detRegex = /<(?:\w+:)?det[^>]*nItem=["'](\d+)["'][^>]*>([\s\S]*?)<\/(?:\w+:)?det>/gi;
   let detMatch;
 
   while ((detMatch = detRegex.exec(xmlContent)) !== null) {
