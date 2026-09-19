@@ -34,6 +34,11 @@ A facção opera sob triangulação fiscal da LC 123/2006. É proibido tributar 
 * **Obrigatoriedade SEFAZ**: Também referencia a NF-e de remessa original (CFOP 5901).
 * **Texto Legal**: `"Documento emitido por ME ou EPP optante pelo Simples Nacional. Nao gera direito a credito fiscal de IPI."`
 
+### D. Segregação de Vestuário vs. Aviamentos
+* **Peças Produzidas / Faturáveis**: Apenas produtos principais de confecção (NCMs 61xx, 62xx, 63xx ou UN/PC excluindo aviamentos) compõem o volume de peças costuradas.
+* **Aviamentos e Insumos Físicos**: Etiquetas, RFID, linhas, fios, elásticos e zíperes não compõem quantidade de mão de obra e são excluídos do faturamento 5124 e do cálculo de peças em linha.
+* **Receita na Linha**: Considera remessas 5901 em aberto (sem cobrança 5124 autorizada) multiplicando as peças reais pelo preço do espelho/fábrica (R$ 40,00 padrão).
+
 ---
 
 ## 2. Padrões de Interface (Mobile-First Touch-Friendly)

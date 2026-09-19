@@ -26,6 +26,10 @@ A plataforma atende exclusivamente oficinas de costura (facções) que operam em
      - `Base de Calculo Tributavel (CFOP 5124)`
      - `Total Nao Tributavel (CFOP 5902)`
    - Impede que o contador tribute a devolução física de insumos da fábrica.
+5. **Segregação de Peças de Vestuário vs. Aviamentos**:
+   - Em uma remessa (CFOP 5901), apenas itens com NCMs de confecção (capítulos 61, 62 e 63) ou unidades UN/PC que não sejam aviamentos representam **peças produzidas/costuradas**.
+   - Aviamentos (linhas, fios, zíperes, elásticos, botões, etiquetas de composição, RFID) são insumos complementares e **nunca** devem ser somados à contagem de peças de mão de obra para cobrança (CFOP 5124) ou previsão de Receita na Linha.
+   - Previsão de Receita na Linha considera apenas remessas com faturamento em aberto (filtrando cobranças autorizadas, ignorando canceladas) e precifica com base no histórico da fábrica parceira ou valor acordado em espelho (R$ 40,00/peça padrão).
 
 ---
 
