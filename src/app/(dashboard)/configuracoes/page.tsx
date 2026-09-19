@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { WhatsAppConnectionTab } from "@/components/modules/settings/WhatsAppConnectionTab";
 import { MonthlyCloseTab } from "@/components/modules/settings/MonthlyCloseTab";
+import { FiscalReadinessChecklist } from "@/components/modules/settings/FiscalReadinessChecklist";
 import {
   getTenantConfigAction,
   saveNotificationRecipientAction,
@@ -56,6 +57,8 @@ function ConfiguracoesContent() {
     inscricaoEstadual: "",
     emailPrincipal: "",
     telefoneContato: "",
+    chavePix: "",
+    dadosBancarios: "",
   });
   const [savingCompany, setSavingCompany] = useState(false);
 
@@ -108,6 +111,8 @@ function ConfiguracoesContent() {
           inscricaoEstadual: data.tenant.inscricaoEstadual || "",
           emailPrincipal: data.tenant.emailPrincipal || "",
           telefoneContato: data.tenant.telefoneContato || "",
+          chavePix: data.tenant.chavePix || "",
+          dadosBancarios: data.tenant.dadosBancarios || "",
         });
       }
     } catch (err) {
@@ -133,6 +138,8 @@ function ConfiguracoesContent() {
         inscricaoEstadual: companyForm.inscricaoEstadual,
         emailPrincipal: companyForm.emailPrincipal,
         telefoneContato: companyForm.telefoneContato,
+        chavePix: companyForm.chavePix,
+        dadosBancarios: companyForm.dadosBancarios,
       });
 
       if (!res.success) {
@@ -470,6 +477,38 @@ function ConfiguracoesContent() {
                   Número utilizado para as comunicações e faturas do sistema.
                 </p>
               </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Chave Pix para Recebimento (Oficina)
+                </label>
+                <input
+                  type="text"
+                  value={companyForm.chavePix}
+                  onChange={(e) => setCompanyForm({ ...companyForm, chavePix: e.target.value })}
+                  placeholder="CNPJ, Celular, E-mail ou Chave Aleatória"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-ink font-mono focus:bg-white focus:border-primary transition-all"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Exibida nas notificações de NF-e 5.124 enviadas ao financeiro da fábrica.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Dados Bancários para Depósito (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={companyForm.dadosBancarios}
+                  onChange={(e) => setCompanyForm({ ...companyForm, dadosBancarios: e.target.value })}
+                  placeholder="Banco 001 - Ag: 1234-5 - Conta: 67890-1"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-ink focus:bg-white focus:border-primary transition-all"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Alternativa para fábricas parceiras que realizam TED ou DOC.
+                </p>
+              </div>
             </div>
 
             <div className="flex justify-end pt-4 border-t border-slate-100">
@@ -739,6 +778,8 @@ function ConfiguracoesContent() {
       {/* TAB: PARÂMETROS FISCAIS */}
       {activeTab === "fiscal" && (
         <div className="space-y-6">
+          <FiscalReadinessChecklist tenant={tenant} />
+
           <form onSubmit={handleSaveFiscal} className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
             <h2 className="text-sm font-bold text-ink flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-primary" />

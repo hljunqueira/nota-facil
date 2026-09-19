@@ -50,3 +50,10 @@ next-env.d.ts
 # archives
 *.tar.gz
 *.zip
+
+# temporary test artifacts and scratch
+scratch/
+*.content.txt
+*-DANFE.json
+ESPELHO*.json
+

@@ -78,6 +78,8 @@ model Tenant {
   diaVencimento             Int             @default(10)
   fidelidadeMeses           Int             @default(24)
   fidelidadeInicio          DateTime?
+  chavePix                  String?
+  dadosBancarios            String?
   createdAt                 DateTime        @default(now())
   updatedAt                 DateTime        @updatedAt
 
@@ -87,6 +89,7 @@ model Tenant {
   cfopRules                 CfopRule[]
   invoices                  Invoice[]
   auditLogs                 AuditLog[]
+  priceHistories            PartnerPriceHistory[]
 }
 
 model User {
@@ -111,18 +114,26 @@ model PlatformAdmin {
 }
 
 model Partner {
-  id            String    @id @default(cuid())
-  razaoSocial   String
-  nomeFantasia  String?
-  cnpj          String
-  email         String?
-  telefone      String?
-  tenantId      String
-  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  invoices      Invoice[]
-  recipients    NotificationRecipient[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                  String    @id @default(cuid())
+  razaoSocial         String
+  nomeFantasia        String?
+  cnpj                String
+  inscricaoEstadual   String?
+  email               String?
+  telefone            String?
+  modoEmissao         String    @default("SEPARADO") // "SEPARADO" (Retorno 5902 + Cobranca 5124 via Espelho) ou "CONJUNTO" (Nota Unica)
+  modeloEspelho       String?   @default("RITMI")    // "RITMI", "LANCA_PERFUME", "GENERICO"
+  modeloEspelhoUrl    String?
+  emailExpedicao      String?
+  emailFinanceiro     String?
+  whatsappFinanceiro  String?
+  tenantId            String
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoices            Invoice[]
+  recipients          NotificationRecipient[]
+  priceHistories      PartnerPriceHistory[]
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@unique([tenantId, cnpj])
 }
@@ -158,26 +169,29 @@ model CfopRule {
 }
 
 model Invoice {
-  id              String      @id @default(cuid())
-  numero          Int
-  serie           Int
-  chaveAcesso     String?     @unique
-  tipo            TipoNota
-  finalidade      String
-  status          StatusNota  @default(PENDENTE)
-  valorTotal      Decimal     @db.Decimal(10, 2)
-  dataEmissao     DateTime
-  xmlUrl          String?
-  pdfUrl          String?
-  focusNfeRef     String?     @unique
-  idempotencyKey  String      @unique
-  rawJson         Json?
-  tenantId        String
-  tenant          Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  partnerId       String?
-  partner         Partner?    @relation(fields: [partnerId], references: [id], onDelete: SetNull)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  id                    String      @id @default(cuid())
+  numero                Int
+  serie                 Int
+  chaveAcesso           String?     @unique
+  tipo                  TipoNota
+  finalidade            String
+  modalidadeEmissao     String?     // "RETORNO_MERCADORIA" | "COBRANCA_INDUSTRIALIZACAO" | "CONJUNTA"
+  espelhoNumero         String?
+  chaveNfeReferenciada  String?
+  status                StatusNota  @default(PENDENTE)
+  valorTotal            Decimal     @db.Decimal(10, 2)
+  dataEmissao           DateTime
+  xmlUrl                String?
+  pdfUrl                String?
+  focusNfeRef           String?     @unique
+  idempotencyKey        String      @unique
+  rawJson               Json?
+  tenantId              String
+  tenant                Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  partnerId             String?
+  partner               Partner?    @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
 
   @@index([tenantId, dataEmissao])
   @@index([tenantId, status])
@@ -197,3 +211,32 @@ model AuditLog {
 
   @@index([tenantId, timestamp])
 }
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([token])
+}
+
+model PartnerPriceHistory {
+  id            String    @id @default(cuid())
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  partnerId     String
+  partner       Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  referencia    String
+  descricao     String?
+  valorUnitario Decimal   @db.Decimal(10, 2)
+  ultimaNotaId  String?
+  dataRegistro  DateTime  @default(now())
+
+  @@unique([tenantId, partnerId, referencia])
+  @@index([tenantId, partnerId])
+}
+

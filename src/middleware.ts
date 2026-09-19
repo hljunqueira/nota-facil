@@ -2,14 +2,41 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
+function applyLogoutHeadersAndCookies(response: NextResponse) {
+  response.headers.set("Clear-Site-Data", '"cookies", "storage"');
+  const cookieNames = [
+    "__Secure-next-auth.session-token",
+    "__Secure-next-auth.session-token.0",
+    "__Secure-next-auth.session-token.1",
+    "__Secure-next-auth.session-token.2",
+    "next-auth.session-token",
+    "next-auth.session-token.0",
+    "next-auth.session-token.1",
+    "next-auth.session-token.2",
+    "__Host-next-auth.csrf-token",
+    "next-auth.csrf-token",
+    "__Secure-next-auth.callback-url",
+    "next-auth.callback-url",
+    "next-auth.pkce.code_verifier",
+  ];
+
+  for (const name of cookieNames) {
+    response.cookies.delete(name);
+    response.cookies.set(name, "", { maxAge: 0, path: "/", secure: true, expires: new Date(0), httpOnly: true, sameSite: "lax" });
+    response.cookies.set(name, "", { maxAge: 0, path: "/", secure: false, expires: new Date(0), httpOnly: true, sameSite: "lax" });
+    response.cookies.set(name, "", { maxAge: 0, path: "/", domain: ".appnotafacil.online", secure: true, expires: new Date(0), httpOnly: true, sameSite: "lax" });
+  }
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const host = req.headers.get("host") || "";
   const isAdminSubdomain = host.startsWith("admin.");
 
-  // 1. Libera arquivos estáticos, assets de imagem, PWA e webhooks da API
+  // 1. Libera arquivos estáticos, assets de imagem, PWA, storage e webhooks da API
   if (
     pathname.startsWith("/_next") ||
+    pathname.startsWith("/storage") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/webhooks") ||
     pathname.startsWith("/api/cnpj") ||
@@ -19,7 +46,9 @@ export async function middleware(req: NextRequest) {
     pathname.endsWith(".png") ||
     pathname.endsWith(".jpg") ||
     pathname.endsWith(".jpeg") ||
-    pathname.endsWith(".svg")
+    pathname.endsWith(".svg") ||
+    pathname.endsWith(".pdf") ||
+    pathname.endsWith(".xml")
   ) {
     return NextResponse.next();
   }
@@ -69,6 +98,11 @@ export async function middleware(req: NextRequest) {
     if (pathname.startsWith("/admin")) {
       // Libera a tela de login do admin
       if (pathname === "/admin/login") {
+        if (req.nextUrl.searchParams.get("logged_out") === "true") {
+          const res = NextResponse.next();
+          applyLogoutHeadersAndCookies(res);
+          return res;
+        }
         if (token && token.role === "ADMIN") {
           return NextResponse.redirect(new URL("/admin", req.url));
         }
@@ -109,12 +143,24 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Páginas públicas (/login e /cadastro)
-  if (pathname === "/login" || pathname === "/cadastro") {
+  // Páginas públicas (/login, /cadastro, /recuperar-senha, /redefinir-senha)
+  if (
+    pathname === "/login" ||
+    pathname === "/cadastro" ||
+    pathname === "/recuperar-senha" ||
+    pathname.startsWith("/redefinir-senha")
+  ) {
+    // Se o usuário deslogou explicitamente, limpa tudo e não redireciona de volta
+    if (req.nextUrl.searchParams.get("logged_out") === "true") {
+      const response = NextResponse.next();
+      applyLogoutHeadersAndCookies(response);
+      return response;
+    }
+
     if (token && token.role === "TENANT") {
       return NextResponse.redirect(new URL("/dashboard", req.url));
     }
-    // Se for ADMIN ou não autenticado, permite ver a tela de login/cadastro de assinantes
+    // Se for ADMIN ou não autenticado, permite ver a tela de login/cadastro/recuperação
     return NextResponse.next();
   }
 

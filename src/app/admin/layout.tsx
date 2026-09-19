@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -34,8 +34,15 @@ export default function AdminLayout({
     { name: "Logs & Auditoria", href: "/admin/logs", icon: History },
   ];
 
+  const [signingOut, setSigningOut] = useState(false);
   const handleSignOut = () => {
-    signOut({ callbackUrl: "/admin/login" });
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch (_) {}
+    window.location.href = "/api/auth/logout?redirect=/admin/login?logged_out=true";
   };
 
   return (

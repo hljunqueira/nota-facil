@@ -104,8 +104,15 @@ export const partnerSchema = z.object({
     .refine((val) => isValidCNPJ(val), {
       message: "CNPJ do parceiro inválido",
     }),
+  inscricaoEstadual: z.string().optional().or(z.literal("")),
   email: z.string().email("E-mail inválido").optional().or(z.literal("")),
   telefone: z.string().optional().or(z.literal("")),
+  modoEmissao: z.enum(["SEPARADO", "CONJUNTO"]).default("SEPARADO"),
+  modeloEspelho: z.string().optional().or(z.literal("")),
+  modeloEspelhoUrl: z.string().optional().or(z.literal("")),
+  emailExpedicao: z.string().email("E-mail inválido").optional().or(z.literal("")),
+  emailFinanceiro: z.string().email("E-mail inválido").optional().or(z.literal("")),
+  whatsappFinanceiro: z.string().optional().or(z.literal("")),
 });
 
 export type PartnerInput = z.infer<typeof partnerSchema>;

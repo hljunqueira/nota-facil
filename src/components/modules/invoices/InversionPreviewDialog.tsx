@@ -40,6 +40,18 @@ export function InversionPreviewDialog({
   const [transmitting, setTransmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  React.useEffect(() => {
+    if (inversionData) {
+      const isConjunto =
+        inversionData.notaEntrada.emitenteFabrica.modoEmissao === "CONJUNTO";
+      setCobrarServico(isConjunto);
+      setQtdPecasServico(inversionData.quantidadeTotalPecas || 1);
+      setValorPorPeca(0);
+      setObservacoes("");
+      setErrorMessage(null);
+    }
+  }, [inversionData, isOpen]);
+
   if (!isOpen || !inversionData) return null;
 
   const { notaEntrada, itensRetorno, totalInsumosRetorno } = inversionData;
@@ -52,9 +64,11 @@ export function InversionPreviewDialog({
     setErrorMessage(null);
 
     try {
+      const chavesRef = (inversionData as any).chavesReferenciadas;
       const res = await executeInversionAction({
         invoiceEntradaId: notaEntrada.id,
-        chaveAcessoEntrada: notaEntrada.chaveAcesso,
+        chaveAcessoEntrada: chavesRef && chavesRef.length > 0 ? chavesRef[0] : notaEntrada.chaveAcesso,
+        chavesAcessoEntrada: chavesRef,
         itensRetorno,
         cobrarServico,
         valorServicoPorPeca: cobrarServico ? valorPorPeca : undefined,
@@ -87,7 +101,7 @@ export function InversionPreviewDialog({
             </div>
             <div>
               <h2 className="text-base font-bold text-ink">
-                Conferência & Emissão de Retorno (Inversão em 1 Clique)
+                Conferência & Emissão — Gerar NF de Retorno
               </h2>
               <p className="text-xs text-slate-500">
                 Revise os itens fiscais antes da transmissão direta para a SEFAZ
@@ -144,6 +158,24 @@ export function InversionPreviewDialog({
               </p>
             </div>
           </div>
+
+          {/* Banner Explicativo de Modo Fiscal */}
+          {!cobrarServico ? (
+            <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 flex items-start gap-2.5 text-xs text-emerald-900">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="flex-1 leading-relaxed">
+                <strong>Modo Retorno de Mercadoria (CFOP 5.902 puro):</strong> Esta nota acompanha o transporte físico dos produtos de volta para a fábrica (R$ 0,00 financeiro).
+                A nota de <strong>Cobrança da Costura (CFOP 5.124)</strong> deve ser emitida pelo botão <em>"Emitir Cobrança (Espelho)"</em> quando a fábrica enviar o Espelho de Produção após a conferência em ~48h.
+              </div>
+            </div>
+          ) : (
+            <div className="p-3.5 rounded-2xl bg-violet-50/80 border border-violet-200/80 flex items-start gap-2.5 text-xs text-violet-900">
+              <Sparkles className="w-4 h-4 text-violet-600 shrink-0 mt-0.5" />
+              <div className="flex-1 leading-relaxed">
+                <strong>Modo Emissão Conjunta (Nota Única):</strong> Esta NF-e conterá os itens de <strong>Retorno dos Insumos (CFOP 5.902)</strong> e o item de <strong>Serviço de Costura (CFOP 5.124)</strong> juntos. O valor de cobrança será apenas sobre a mão de obra.
+              </div>
+            </div>
+          )}
 
           {/* Tabela de Itens Convertidos */}
           <div className="space-y-2">

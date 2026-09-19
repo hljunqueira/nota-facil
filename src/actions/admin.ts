@@ -11,6 +11,7 @@ import {
 import { StatusCadastro, StatusConta, AmbienteFiscal } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
+import { sendTenantWelcomeEmail } from "@/lib/services/email";
 
 async function requireAdminSession() {
   const session = await getServerSession(authOptions);
@@ -177,6 +178,20 @@ export async function approveTenantAction(tenantId: string) {
       },
     });
   });
+
+  // Envia e-mail formal de boas-vindas com orientações de acesso
+  const targetEmail = tenant.emailPrincipal;
+  if (targetEmail && targetEmail.includes("@")) {
+    try {
+      await sendTenantWelcomeEmail({
+        to: targetEmail,
+        razaoSocial: tenant.razaoSocial,
+        nomeResponsavel: tenant.nomeFantasia || undefined,
+      });
+    } catch (emailErr) {
+      console.warn("[approveTenantAction] Falha ao enviar e-mail de boas-vindas:", emailErr);
+    }
+  }
 
   revalidatePath("/admin");
   revalidatePath("/admin/aprovacoes");

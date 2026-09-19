@@ -32,10 +32,12 @@ export interface ParsedNfe {
     municipio?: string;
     uf?: string;
     cep?: string;
+    telefone?: string;
   };
   destinatario: {
     cnpj: string;
     razaoSocial: string;
+    inscricaoEstadual?: string;
   };
   itens: ParsedNfeItem[];
 }

@@ -34,6 +34,8 @@ export interface InversionPreparationResult {
       ie?: string;
       cidade?: string;
       uf?: string;
+      modoEmissao?: string;
+      modeloEspelho?: string;
     };
     itens: any[];
   };
@@ -125,9 +127,11 @@ export async function prepareInvoiceInversion(
         emitenteFabrica: {
           nome: invoice.partner?.razaoSocial || emitente.razaoSocial || "Fábrica Parceira",
           cnpj: invoice.partner?.cnpj || emitente.cnpj || "",
-          ie: emitente.inscricaoEstadual,
+          ie: invoice.partner?.inscricaoEstadual || emitente.inscricaoEstadual,
           cidade: emitente.municipio,
           uf: emitente.uf,
+          modoEmissao: invoice.partner?.modoEmissao || "SEPARADO",
+          modeloEspelho: invoice.partner?.modeloEspelho || "RITMI",
         },
         itens: itensEntrada,
       },
@@ -140,36 +144,150 @@ export async function prepareInvoiceInversion(
 }
 
 /**
+ * Prepara a inversão agrupada de múltiplas remessas (5901) da mesma fábrica parceira
+ */
+export async function prepareBatchInvoiceInversion(
+  tenantId: string,
+  invoiceIds: string[]
+): Promise<{ success: boolean; data?: InversionPreparationResult & { chavesReferenciadas: string[] }; error?: string }> {
+  const tenantPrisma = createTenantPrisma(tenantId);
+
+  const invoices = await tenantPrisma.invoice.findMany({
+    where: { id: { in: invoiceIds } },
+    include: { partner: true },
+    orderBy: { numero: "asc" },
+  });
+
+  if (invoices.length === 0) {
+    return { success: false, error: "Nenhuma nota selecionada para agrupamento." };
+  }
+
+  const partnerId = invoices[0].partnerId;
+  const differentPartner = invoices.some((inv) => inv.partnerId !== partnerId);
+  if (differentPartner) {
+    return { success: false, error: "Todas as notas agrupadas devem pertencer à mesma fábrica parceira." };
+  }
+
+  const cfopRules = await tenantPrisma.cfopRule.findMany({
+    where: { ativo: true },
+  });
+
+  const cfopMap: Record<string, string> = {};
+  for (const r of cfopRules) {
+    cfopMap[r.cfopEntrada] = r.cfopSaidaCorrespondente;
+  }
+
+  let totalInsumos = 0;
+  let totalQtd = 0;
+  let itemNum = 1;
+  const itensRetorno: InvertedItem[] = [];
+  const chavesReferenciadas: string[] = [];
+
+  for (const inv of invoices) {
+    if (inv.chaveAcesso) chavesReferenciadas.push(inv.chaveAcesso);
+
+    const rawData: any = inv.rawJson || {};
+    const itensEntrada: any[] = rawData.itens || [];
+
+    for (const item of itensEntrada) {
+      const cfopIn = (item.cfop || "5901").replace(/\D/g, "");
+      let cfopOut = cfopMap[cfopIn];
+      if (!cfopOut) {
+        cfopOut = cfopIn.startsWith("6") ? "6902" : "5902";
+      }
+
+      const itemTotal = Number(item.valorTotal || item.valorUnitario * item.quantidade || 0);
+      const qtd = Number(item.quantidade || 1);
+
+      totalInsumos += itemTotal;
+      totalQtd += qtd;
+
+      itensRetorno.push({
+        numeroItem: itemNum++,
+        codigo: item.codigo || `ITEM-${itemNum}`,
+        descricao: item.descricao?.startsWith("Retorno") ? item.descricao : `Retorno de ${item.descricao} (Ref. NF ${inv.numero})`,
+        ncm: item.ncm || "61091000",
+        cfopEntradaOriginal: cfopIn,
+        cfopSaida: cfopOut,
+        unidade: item.unidade || "UN",
+        quantidade: qtd,
+        valorUnitario: Number(item.valorUnitario || 0),
+        valorTotal: itemTotal,
+      });
+    }
+  }
+
+  const firstInv = invoices[0];
+  const rawFirst: any = firstInv.rawJson || {};
+  const emitente = rawFirst.emitente || {};
+
+  return {
+    success: true,
+    data: {
+      notaEntrada: {
+        id: firstInv.id,
+        numero: firstInv.numero,
+        serie: firstInv.serie,
+        chaveAcesso: chavesReferenciadas.join(", "),
+        dataEmissao: firstInv.dataEmissao,
+        valorTotal: totalInsumos,
+        emitenteFabrica: {
+          nome: firstInv.partner?.razaoSocial || emitente.razaoSocial || "Fábrica Parceira",
+          cnpj: firstInv.partner?.cnpj || emitente.cnpj || "",
+          ie: firstInv.partner?.inscricaoEstadual || emitente.inscricaoEstadual,
+          cidade: emitente.municipio,
+          uf: emitente.uf,
+          modoEmissao: firstInv.partner?.modoEmissao || "SEPARADO",
+          modeloEspelho: firstInv.partner?.modeloEspelho || "RITMI",
+        },
+        itens: itensRetorno,
+      },
+      itensRetorno,
+      totalInsumosRetorno: totalInsumos,
+      quantidadeTotalPecas: totalQtd,
+      cfopMap,
+      chavesReferenciadas,
+    },
+  };
+}
+
+/**
  * Monta o payload no padrão Focus NFe v2.0 para emissão de NF-e
  */
 export function buildFocusNfePayload({
   tenant,
   partner,
   chaveAcessoEntrada,
+  chavesAcessoEntrada,
   itensRetorno,
   cobrarServico,
   valorServicoPorPeca,
   quantidadePecasServico,
   observacoesFiscais,
+  emitenteInfo,
 }: {
   tenant: any;
   partner: any;
   chaveAcessoEntrada: string;
+  chavesAcessoEntrada?: string[];
   itensRetorno: InvertedItem[];
   cobrarServico?: boolean;
   valorServicoPorPeca?: number;
   quantidadePecasServico?: number;
   observacoesFiscais?: string;
+  emitenteInfo?: any;
 }) {
   const itemsPayload: any[] = [];
   let itemNum = 1;
 
   // 1. Itens de Retorno de Insumo (CFOP 5902 / 6902)
   for (const item of itensRetorno) {
+    const desc = item.descricao.length > 120 ? item.descricao.substring(0, 120).trim() : item.descricao;
+
     itemsPayload.push({
       numero_item: itemNum++,
       codigo_produto: item.codigo,
-      descricao: item.descricao,
+      descricao: desc,
       codigo_ncm: item.ncm.replace(/\D/g, ""),
       cfop: item.cfopSaida,
       unidade_comercial: item.unidade,
@@ -180,7 +298,10 @@ export function buildFocusNfePayload({
       quantidade_tributavel: item.quantidade,
       valor_unitario_tributavel: item.valorUnitario,
       origem: 0,
+      icms_origem: 0,
       icms_situacao_tributaria: "400", // Não tributada pelo Simples Nacional (Insumo)
+      pis_situacao_tributaria: "08",  // Operação sem incidência da contribuição
+      cofins_situacao_tributaria: "08", // Operação sem incidência da contribuição
     });
   }
 
@@ -203,33 +324,166 @@ export function buildFocusNfePayload({
       quantidade_tributavel: qtdServico,
       valor_unitario_tributavel: valorServicoPorPeca,
       origem: 0,
+      icms_origem: 0,
       icms_situacao_tributaria: "101", // Simples Nacional com permissão de crédito
+      pis_situacao_tributaria: "08",
+      cofins_situacao_tributaria: "08",
     });
   }
 
-  const infAdic = `Retorno de mercadoria recebida para industrializacao ref. NF-e Chave ${chaveAcessoEntrada}. ${
+  // Monta lista de chaves referenciadas
+  const rawChaves = chavesAcessoEntrada && chavesAcessoEntrada.length > 0
+    ? chavesAcessoEntrada
+    : [chaveAcessoEntrada];
+
+  const cleanChaves = rawChaves
+    .map((c) => c.replace(/\D/g, ""))
+    .filter((c) => c.length === 44);
+
+  const notasRefPayload = cleanChaves.map((chave_nfe) => ({ chave_nfe }));
+
+  const infAdic = `Retorno de mercadoria recebida para industrializacao ref. NF-e Chave(s): ${cleanChaves.join(", ")}. Nao incidencia de ICMS conf. legislacao estadual. Prestacao de servico tributada pelo Simples Nacional conf. LC 123/2006 (Anexo II - Industria). ${
     observacoesFiscais ? observacoesFiscais.trim() : ""
   }`.trim();
 
+  // Dados do Destinatário (Fábrica parceira)
+  const cleanPartnerCnpj = (partner.cnpj || "").replace(/\D/g, "");
+  const ieDest = partner.inscricaoEstadual?.trim().toUpperCase() ||
+    emitenteInfo?.inscricaoEstadual ||
+    (cleanPartnerCnpj === "72305295000115" ? "252740106" : undefined);
+
   return {
-    natureza_operacao: "Retorno de Industrializacao por Encomenda",
+    natureza_operacao: "Retorno de mercadoria por encomenda",
     tipo_documento: 1, // 1 = Saída
     finalidade_emissao: 1, // 1 = Normal
+    modalidade_frete: "9", // 9 = Sem Ocorrência de Transporte
+    numero: tenant.proximoNumero || undefined,
+    serie: tenant.serieNfe ? String(tenant.serieNfe) : "1",
     cnpj_emitente: tenant.cnpj.replace(/\D/g, ""),
     data_emissao: new Date().toISOString(),
 
-    // Destinatário: Fábrica parceira (ex: Ritme)
-    nome_destinatario: partner.razaoSocial,
-    cnpj_destinatario: partner.cnpj.replace(/\D/g, ""),
-    inscricao_estadual_destinatario: partner.inscricaoEstadual?.trim().toUpperCase() || "ISENTO",
-    indicador_inscricao_estadual_destinatario: partner.inscricaoEstadual ? 1 : 9,
+    // Destinatário: Fábrica parceira (ex: Ritmi)
+    nome_destinatario: partner.razaoSocial || emitenteInfo?.razaoSocial || "RITMI CONFECCOES LTDA",
+    cnpj_destinatario: cleanPartnerCnpj,
+    inscricao_estadual_destinatario: ieDest || "ISENTO",
+    indicador_inscricao_estadual_destinatario: ieDest ? 1 : 9,
+    logradouro_destinatario: partner.logradouro || emitenteInfo?.logradouro || "RODOVIA SO 350 - ANTONIO LIVINO F",
+    numero_destinatario: partner.numero || emitenteInfo?.numero || "200",
+    bairro_destinatario: partner.bairro || emitenteInfo?.bairro || "NOVA GUARITA",
+    municipio_destinatario: partner.municipio || emitenteInfo?.municipio || "SOMBRIO",
+    uf_destinatario: partner.uf || emitenteInfo?.uf || "SC",
+    cep_destinatario: (partner.cep || emitenteInfo?.cep || "88960000").replace(/\D/g, ""),
+    telefone_destinatario: (partner.telefone || emitenteInfo?.telefone || "4835336300").replace(/\D/g, ""),
 
     // Documentos Referenciados (Obrigatório SEFAZ)
-    notas_referenciadas: [
-      {
-        chave_nfe: chaveAcessoEntrada.replace(/\D/g, ""),
-      },
-    ],
+    notas_referenciadas: notasRefPayload.length > 0 ? notasRefPayload : [{ chave_nfe: chaveAcessoEntrada.replace(/\D/g, "") }],
+
+    itens: itemsPayload,
+    informacoes_adicionais_contribuinte: infAdic,
+  };
+}
+
+/**
+ * Constrói o payload para Emissão de Nota Fiscal de Cobrança de Industrialização (CFOP 5.124)
+ * a partir do Espelho de Produção enviado pela fábrica parceira.
+ */
+export function buildFocusNfeCobrancaPayload({
+  tenant,
+  partner,
+  itens,
+  numeroControleEspelho,
+  numeroNota,
+  serieNota,
+  observacoesFiscais,
+  chaveReferenciada,
+}: {
+  tenant: any;
+  partner: any;
+  itens: Array<{
+    op?: string;
+    referencia: string;
+    faseServico?: string;
+    quantidade: number;
+    valorUnitario: number;
+    valorTotal: number;
+    ncm?: string;
+  }>;
+  numeroControleEspelho?: string;
+  numeroNota?: number;
+  serieNota?: string;
+  observacoesFiscais?: string;
+  chaveReferenciada?: string;
+}) {
+  const cleanPartnerCnpj = (partner.cnpj || "").replace(/\D/g, "");
+  const ieDest = partner.inscricaoEstadual?.trim().toUpperCase() ||
+    (cleanPartnerCnpj === "72305295000115" ? "252740106" : undefined);
+  const cleanChaveRef = (chaveReferenciada || "").replace(/\D/g, "");
+
+  let itemNum = 1;
+  const itemsPayload: any[] = [];
+
+  for (const item of itens) {
+    const rawDesc = `${item.referencia} ${item.faseServico || "COSTURA"}`.trim();
+    const desc = rawDesc.length > 120 ? rawDesc.substring(0, 120).trim() : rawDesc;
+
+    itemsPayload.push({
+      numero_item: itemNum++,
+      codigo_produto: (item.op || `SERV-${itemNum}`).substring(0, 20),
+      descricao: desc,
+      codigo_ncm: (item.ncm || "61044200").replace(/\D/g, ""),
+      cfop: partner.uf && partner.uf !== tenant.uf ? "6124" : "5124",
+      unidade_comercial: "UNID",
+      quantidade_comercial: item.quantidade,
+      valor_unitario_comercial: item.valorUnitario,
+      valor_bruto: item.valorTotal,
+      unidade_tributavel: "UNID",
+      quantidade_tributavel: item.quantidade,
+      valor_unitario_tributavel: item.valorUnitario,
+      origem: 0,
+      icms_origem: 0,
+      icms_situacao_tributaria: "102", // Simples Nacional sem permissão de crédito
+      pis_situacao_tributaria: "08",
+      cofins_situacao_tributaria: "08",
+    });
+  }
+
+  const infAdic = `Doc Emit por ME ou EPP Simples Nac - LC 123/2006 (Anexo II - Industria). Nao gera direito a credito de ISS e IPI. NOTA DE COBRANCA DE INDUSTRIALIZACAO (CFOP 5124). ${
+    numeroControleEspelho ? `Ref. Espelho/Controle Nº ${numeroControleEspelho}.` : ""
+  } ${cleanChaveRef.length === 44 ? `Ref. NF-e Remessa de Insumos: ${cleanChaveRef}.` : ""} ${observacoesFiscais || ""}`.trim();
+
+  return {
+    natureza_operacao: "INDUSTRIALIZAÇÃO COBRANÇA",
+    tipo_documento: 1, // Saída
+    finalidade_emissao: 1, // Normal
+    modalidade_frete: "9", // Sem frete
+    numero: numeroNota || tenant.proximoNumero || undefined,
+    serie: serieNota || (tenant.serieNfe ? String(tenant.serieNfe) : "1"),
+    cnpj_emitente: tenant.cnpj.replace(/\D/g, ""),
+    data_emissao: new Date().toISOString(),
+
+    // Referência fiscal da NF-e de entrada (remessa de corte) - Tag oficial Focus NFe / SEFAZ <NFref>
+    ...(cleanChaveRef.length === 44
+      ? {
+          notas_referenciadas: [
+            {
+              chave_nfe: cleanChaveRef,
+            },
+          ],
+        }
+      : {}),
+
+    // Destinatário: Fábrica parceira (ex: Ritmi)
+    nome_destinatario: partner.razaoSocial,
+    cnpj_destinatario: cleanPartnerCnpj,
+    inscricao_estadual_destinatario: ieDest || "ISENTO",
+    indicador_inscricao_estadual_destinatario: ieDest ? 1 : 9,
+    logradouro_destinatario: partner.logradouro || "ANTONIO LIVINO F",
+    numero_destinatario: partner.numero || "200",
+    bairro_destinatario: partner.bairro || "NOVA GUARITA",
+    municipio_destinatario: partner.municipio || "SOMBRIO",
+    uf_destinatario: partner.uf || "SC",
+    cep_destinatario: (partner.cep || "88960000").replace(/\D/g, ""),
+    telefone_destinatario: (partner.telefone || "4835336300").replace(/\D/g, ""),
 
     itens: itemsPayload,
     informacoes_adicionais_contribuinte: infAdic,

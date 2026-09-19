@@ -4,19 +4,24 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { createTenantPrisma } from "@/lib/prisma";
 import { prismaAdmin } from "@/lib/prismaAdmin";
-import { parseNfeXml } from "@/lib/services/xmlParser";
+import { parseNfeXml, ParsedNfe } from "@/lib/services/xmlParser";
+import { parseDanfePdf } from "@/lib/services/danfePdfParser";
+import { parseEspelhoPdf, ParsedEspelho } from "@/lib/services/espelhoPdfParser";
 import {
   prepareInvoiceInversion,
+  prepareBatchInvoiceInversion,
   buildFocusNfePayload,
+  buildFocusNfeCobrancaPayload,
   InvertedItem,
 } from "@/lib/services/inversion";
-import { uploadInvoiceXml, uploadInvoicePdf } from "@/lib/storage";
+import { uploadInvoiceXml, uploadInvoicePdf, getFileFromStorage } from "@/lib/storage";
 import {
   getFocusBaseUrl,
   cancelNfeInFocus,
   getNfeStatusFromFocus,
   downloadFocusNfeDocument,
 } from "@/lib/services/focusNfe";
+import { sendInvoiceEmail } from "@/lib/services/email";
 import { TipoNota, StatusNota } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 
@@ -68,6 +73,8 @@ export async function getInvoicesAction(filters?: {
           razaoSocial: true,
           nomeFantasia: true,
           cnpj: true,
+          modoEmissao: true,
+          modeloEspelho: true,
         },
       },
     },
@@ -77,7 +84,162 @@ export async function getInvoicesAction(filters?: {
 }
 
 /**
- * Importa e registra uma NF-e de entrada a partir do arquivo XML da fábrica
+ * Importa e registra uma NF-e de entrada a partir do arquivo XML ou DANFE PDF
+ */
+export async function importInvoiceFileAction(formData: FormData) {
+  const { tenantId, tenantPrisma } = await requireTenantSession();
+  const file = formData.get("file") as File | null;
+  if (!file) {
+    return { success: false, error: "Nenhum arquivo enviado para importação." };
+  }
+
+  const fileName = file.name.toLowerCase();
+  const isPdf = fileName.endsWith(".pdf") || file.type === "application/pdf";
+  const isXml = fileName.endsWith(".xml") || file.type === "text/xml" || file.type === "application/xml";
+
+  if (!isPdf && !isXml) {
+    return { success: false, error: "Formato inválido. Por favor envie um arquivo PDF (DANFE) ou XML da NF-e." };
+  }
+
+  try {
+    let parsed: ParsedNfe;
+    let pdfUrl: string | null = null;
+    let xmlUrl: string | null = null;
+
+    const currentTenant = await prismaAdmin.tenant.findUnique({
+      where: { id: tenantId },
+      select: { cnpj: true, razaoSocial: true, inscricaoEstadual: true },
+    });
+
+    if (isPdf) {
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      parsed = await parseDanfePdf(
+        buffer,
+        currentTenant
+          ? {
+              cnpj: currentTenant.cnpj,
+              razaoSocial: currentTenant.razaoSocial,
+              ie: currentTenant.inscricaoEstadual,
+            }
+          : undefined
+      );
+
+      try {
+        pdfUrl = await uploadInvoicePdf(tenantId, parsed.chaveAcesso, buffer);
+      } catch (storageErr) {
+        console.warn("Aviso ao salvar PDF no storage:", storageErr);
+      }
+    } else {
+      const xmlContent = await file.text();
+      parsed = parseNfeXml(xmlContent);
+
+      try {
+        xmlUrl = await uploadInvoiceXml(tenantId, parsed.chaveAcesso, xmlContent);
+      } catch (storageErr) {
+        console.warn("Aviso ao salvar XML no storage:", storageErr);
+      }
+    }
+
+    if (!parsed.chaveAcesso) {
+      return { success: false, error: "Não foi possível extrair a Chave de Acesso da nota fiscal." };
+    }
+
+    // 1. Verifica duplicidade
+    const existing = await prismaAdmin.invoice.findUnique({
+      where: { chaveAcesso: parsed.chaveAcesso },
+    });
+
+    if (existing) {
+      return {
+        success: false,
+        error: `Esta nota fiscal já foi importada anteriormente (Nº ${parsed.numero}).`,
+        invoiceId: existing.id,
+      };
+    }
+
+    // 2. Cadastra ou vincula a fábrica parceira (Partner)
+    const cleanEmitCnpj = parsed.emitente.cnpj.replace(/\D/g, "");
+    let partner = await tenantPrisma.partner.findFirst({
+      where: { cnpj: cleanEmitCnpj },
+    });
+
+    if (!partner) {
+      partner = await tenantPrisma.partner.create({
+        data: {
+          tenantId,
+          razaoSocial: parsed.emitente.razaoSocial,
+          nomeFantasia: parsed.emitente.nomeFantasia || null,
+          cnpj: cleanEmitCnpj,
+          telefone: parsed.emitente.telefone?.replace(/\D/g, "") || null,
+        },
+      });
+    }
+
+    // 3. Cria a Invoice de Entrada
+    const invoice = await tenantPrisma.invoice.create({
+      data: {
+        tenantId,
+        numero: parsed.numero,
+        serie: parsed.serie,
+        chaveAcesso: parsed.chaveAcesso,
+        tipo: TipoNota.ENTRADA,
+        finalidade: parsed.naturezaOperacao,
+        status: StatusNota.AUTORIZADA,
+        valorTotal: parsed.valorTotal,
+        dataEmissao: parsed.dataEmissao,
+        xmlUrl,
+        pdfUrl,
+        partnerId: partner.id,
+        idempotencyKey: `import_${tenantId}_${parsed.chaveAcesso}`,
+        rawJson: {
+          emitente: parsed.emitente,
+          destinatario: parsed.destinatario,
+          itens: parsed.itens,
+        },
+      },
+    });
+
+    // 4. Grava AuditLog
+    await tenantPrisma.auditLog.create({
+      data: {
+        tenantId,
+        actorType: "USER",
+        actorId: tenantId,
+        acao: isPdf ? "IMPORTACAO_PDF_ENTRADA" : "IMPORTACAO_XML_ENTRADA",
+        entidade: "Invoice",
+        entidadeId: invoice.id,
+        detalhe: {
+          numero: parsed.numero,
+          serie: parsed.serie,
+          chaveAcesso: parsed.chaveAcesso,
+          fabrica: parsed.emitente.razaoSocial,
+          totalItens: parsed.itens.length,
+          valorTotal: parsed.valorTotal,
+          formato: isPdf ? "PDF" : "XML",
+        },
+      },
+    });
+
+    revalidatePath("/notas");
+    revalidatePath("/dashboard");
+    revalidatePath("/");
+
+    return {
+      success: true,
+      invoiceId: invoice.id,
+      numero: parsed.numero,
+      totalItens: parsed.itens.length,
+      valorTotal: parsed.valorTotal,
+    };
+  } catch (err: any) {
+    console.error("[importInvoiceFileAction] Erro:", err);
+    return { success: false, error: err.message || "Erro ao processar arquivo de nota fiscal." };
+  }
+}
+
+/**
+ * Importa e registra uma NF-e de entrada a partir do arquivo XML da fábrica (compatibilidade retroativa)
  */
 export async function importNfeXmlAction(xmlContent: string) {
   const { tenantId, tenantPrisma } = await requireTenantSession();
@@ -193,11 +355,20 @@ export async function getInversionPreviewAction(invoiceId: string) {
 }
 
 /**
+ * Carrega a prévia calculada de inversão agrupando múltiplas remessas de entrada
+ */
+export async function getBatchInversionPreviewAction(invoiceIds: string[]) {
+  const { tenantId } = await requireTenantSession();
+  return prepareBatchInvoiceInversion(tenantId, invoiceIds);
+}
+
+/**
  * Dispara a emissão da NF-e de retorno invertida para a SEFAZ via Focus NFe
  */
 export async function executeInversionAction({
   invoiceEntradaId,
   chaveAcessoEntrada,
+  chavesAcessoEntrada,
   itensRetorno,
   cobrarServico,
   valorServicoPorPeca,
@@ -206,6 +377,7 @@ export async function executeInversionAction({
 }: {
   invoiceEntradaId: string;
   chaveAcessoEntrada: string;
+  chavesAcessoEntrada?: string[];
   itensRetorno: InvertedItem[];
   cobrarServico?: boolean;
   valorServicoPorPeca?: number;
@@ -247,6 +419,9 @@ export async function executeInversionAction({
     return { success: false, error: "Nota de entrada ou fábrica parceira não encontrada." };
   }
 
+  const rawData: any = invoiceEntrada.rawJson || {};
+  const emitenteInfo = rawData.emitente || {};
+
   // Gera Chave de Idempotência Única
   const idempotencyKey = `nf_${tenantId}_ret_${invoiceEntrada.numero}_${Date.now()}`;
 
@@ -255,11 +430,13 @@ export async function executeInversionAction({
     tenant,
     partner: invoiceEntrada.partner,
     chaveAcessoEntrada,
+    chavesAcessoEntrada,
     itensRetorno,
     cobrarServico,
     valorServicoPorPeca,
     quantidadePecasServico,
     observacoesFiscais,
+    emitenteInfo,
   });
 
   // Calcula valor total da nota
@@ -303,18 +480,55 @@ export async function executeInversionAction({
       };
     }
 
-    // Cria registro de Retorno no Postgres em estado PENDENTE (será atualizado via webhook)
+    // Verifica se a nota já foi autorizada imediatamente de forma síncrona
+    const isAutorizadoSync = focusData.status === "autorizado" && focusData.chave_nfe;
+    const initialStatus = isAutorizadoSync ? StatusNota.AUTORIZADA : StatusNota.PENDENTE;
+    const chaveEmitida = focusData.chave_nfe || null;
+    let pdfUrl: string | null = null;
+    let xmlUrl: string | null = null;
+
+    if (isAutorizadoSync) {
+      if (focusData.caminho_danfe) {
+        try {
+          const pdfDoc = await downloadFocusNfeDocument(focusData.caminho_danfe, token, tenant.ambiente);
+          if (pdfDoc.success && pdfDoc.buffer && pdfDoc.buffer.slice(0, 5).toString() === "%PDF-") {
+            pdfUrl = await uploadInvoicePdf(tenantId, chaveEmitida, pdfDoc.buffer);
+          }
+        } catch (_) {}
+      }
+      if (focusData.caminho_xml_nota_fiscal) {
+        try {
+          const xmlDoc = await downloadFocusNfeDocument(focusData.caminho_xml_nota_fiscal, token, tenant.ambiente);
+          if (xmlDoc.success && xmlDoc.buffer && xmlDoc.buffer.slice(0, 1).toString() === "<") {
+            xmlUrl = await uploadInvoiceXml(tenantId, chaveEmitida, xmlDoc.buffer.toString("utf-8"));
+          }
+        } catch (_) {}
+      }
+    }
+
+    const modalidade = cobrarServico ? "CONJUNTA" : "RETORNO_MERCADORIA";
+    const finalidadeDesc = cobrarServico
+      ? "RETORNO E INDUSTRIALIZAÇÃO (CONJUNTA)"
+      : "RETORNO DE MERCADORIA POR ENCOMENDA";
+
     const newInvoice = await prismaAdmin.invoice.create({
       data: {
         tenantId,
         numero: tenant.proximoNumero,
         serie: tenant.serieNfe,
-        chaveAcesso: focusData.chave_nfe || null,
+        chaveAcesso: chaveEmitida,
         tipo: TipoNota.SAIDA,
-        finalidade: "Retorno de Industrializacao",
-        status: StatusNota.PENDENTE,
+        finalidade: finalidadeDesc,
+        modalidadeEmissao: modalidade,
+        chaveNfeReferenciada:
+          chavesAcessoEntrada && chavesAcessoEntrada.length > 0
+            ? chavesAcessoEntrada.join(", ")
+            : chaveAcessoEntrada,
+        status: initialStatus,
         valorTotal: valorTotalNota,
         dataEmissao: new Date(),
+        pdfUrl,
+        xmlUrl,
         focusNfeRef: idempotencyKey,
         idempotencyKey,
         partnerId: invoiceEntrada.partnerId,
@@ -322,6 +536,9 @@ export async function executeInversionAction({
           chaveAcessoEntrada,
           focusResponse: focusData,
           payloadEnviado: payload,
+          modalidade,
+          pdfUrl,
+          xmlUrl,
         },
       },
     });
@@ -552,7 +769,7 @@ export async function checkInvoiceStatusAction(invoiceId: string) {
     if (!pdfUrl && data.caminho_danfe) {
       try {
         const pdfDownload = await downloadFocusNfeDocument(data.caminho_danfe, token, tenant.ambiente);
-        if (pdfDownload.success && pdfDownload.buffer) {
+        if (pdfDownload.success && pdfDownload.buffer && pdfDownload.buffer.slice(0, 5).toString() === "%PDF-") {
           pdfUrl = await uploadInvoicePdf(tenantId, data.chave_nfe || invoice.id, pdfDownload.buffer);
         }
       } catch (err) {
@@ -563,7 +780,7 @@ export async function checkInvoiceStatusAction(invoiceId: string) {
     if (!xmlUrl && data.caminho_xml_nota_fiscal) {
       try {
         const xmlDownload = await downloadFocusNfeDocument(data.caminho_xml_nota_fiscal, token, tenant.ambiente);
-        if (xmlDownload.success && xmlDownload.buffer) {
+        if (xmlDownload.success && xmlDownload.buffer && xmlDownload.buffer.slice(0, 1).toString() === "<") {
           xmlUrl = await uploadInvoiceXml(tenantId, data.chave_nfe || invoice.id, xmlDownload.buffer.toString("utf-8"));
         }
       } catch (err) {
@@ -619,3 +836,471 @@ export async function checkInvoiceStatusAction(invoiceId: string) {
     chaveAcesso: data.chave_nfe || invoice.chaveAcesso,
   };
 }
+
+/**
+ * Importa e analisa o arquivo PDF do Espelho de Produção da fábrica parceira
+ */
+export async function parseEspelhoFileAction(formData: FormData) {
+  const { tenantId, tenantPrisma } = await requireTenantSession();
+  const file = formData.get("file") as File | null;
+  if (!file) {
+    return { success: false, error: "Nenhum arquivo enviado." };
+  }
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const espelho = await parseEspelhoPdf(buffer);
+
+    if (!espelho || espelho.itens.length === 0) {
+      return {
+        success: false,
+        error: "Não foi possível identificar os itens ou o valor do serviço no arquivo de espelho enviado. Certifique-se de que é o PDF de Controle/Espelho da fábrica.",
+      };
+    }
+
+    // Tenta localizar a fábrica parceira correspondente
+    const partners = await tenantPrisma.partner.findMany();
+    let matchedPartner = partners.find((p) =>
+      p.razaoSocial.toLowerCase().includes(espelho.fabricaNome.toLowerCase()) ||
+      espelho.fabricaNome.toLowerCase().includes(p.razaoSocial.toLowerCase())
+    );
+
+    // Se for Ritmi e não achou por nome parcial
+    if (!matchedPartner && espelho.fabricaNome.toLowerCase().includes("ritmi")) {
+      matchedPartner = partners.find((p) => p.cnpj.replace(/\D/g, "") === "72305295000115");
+    }
+
+    // Checagem de duplicidade: verifica se este número de controle já foi faturado
+    let jaFaturado: { numeroNota: number; dataEmissao: string; status: string } | null = null;
+    if (espelho.numeroControle) {
+      const notaExistente = await tenantPrisma.invoice.findFirst({
+        where: {
+          tipo: TipoNota.SAIDA,
+          espelhoNumero: espelho.numeroControle,
+          status: { not: StatusNota.CANCELADA },
+        },
+        select: { numero: true, dataEmissao: true, status: true },
+      });
+      if (notaExistente) {
+        jaFaturado = {
+          numeroNota: notaExistente.numero,
+          dataEmissao: notaExistente.dataEmissao.toISOString(),
+          status: notaExistente.status,
+        };
+      }
+    }
+
+    return {
+      success: true,
+      espelho,
+      partner: matchedPartner || partners[0] || null,
+      availablePartners: partners,
+      jaFaturado,
+    };
+  } catch (err: any) {
+    console.error("[parseEspelhoFileAction] Erro:", err);
+    return {
+      success: false,
+      error: err.message || "Erro ao processar o arquivo de espelho.",
+    };
+  }
+}
+
+/**
+ * Emite a NF-e de Cobrança de Industrialização (CFOP 5.124) na Focus NFe a partir do Espelho
+ */
+export async function emitirCobrancaEspelhoAction({
+  partnerId,
+  itens,
+  numeroControleEspelho,
+  observacoesFiscais,
+  remessaOrigemId,
+  chaveNfeReferenciada,
+  previsaoPagamento,
+}: {
+  partnerId: string;
+  itens: Array<{
+    op?: string;
+    referencia: string;
+    faseServico?: string;
+    quantidade: number;
+    valorUnitario: number;
+    valorTotal: number;
+    ncm?: string;
+  }>;
+  numeroControleEspelho?: string;
+  observacoesFiscais?: string;
+  remessaOrigemId?: string;
+  chaveNfeReferenciada?: string;
+  previsaoPagamento?: string;
+}) {
+  const { tenantId, tenantPrisma } = await requireTenantSession();
+
+  const tenant = await prismaAdmin.tenant.findUnique({
+    where: { id: tenantId },
+  });
+
+  if (!tenant) {
+    return { success: false, error: "Oficina não encontrada." };
+  }
+
+  const partner = await tenantPrisma.partner.findUnique({
+    where: { id: partnerId },
+  });
+
+  if (!partner) {
+    return { success: false, error: "Fábrica parceira destinatária da cobrança não encontrada." };
+  }
+
+  const valorTotal = itens.reduce((acc, it) => acc + it.valorTotal, 0);
+  const idempotencyKey = `cobranca_${tenantId}_${Date.now()}`;
+
+  const payload = buildFocusNfeCobrancaPayload({
+    tenant,
+    partner,
+    itens,
+    numeroControleEspelho,
+    numeroNota: tenant.proximoNumero || undefined,
+    serieNota: tenant.serieNfe ? String(tenant.serieNfe) : "1",
+    observacoesFiscais,
+    chaveReferenciada: chaveNfeReferenciada,
+  });
+
+  const baseUrl = getFocusBaseUrl(tenant.ambiente);
+  const token =
+    tenant.ambiente === "PRODUCAO"
+      ? tenant.focusNfeTokenProducao
+      : tenant.focusNfeTokenHomologacao;
+
+  if (!token) {
+    return {
+      success: false,
+      error: `Token da Focus NFe (${tenant.ambiente}) não configurado.`,
+    };
+  }
+
+  try {
+    const focusUrl = `${baseUrl}/v2/nfe?ref=${idempotencyKey}`;
+    const basicAuth = Buffer.from(`${token}:`).toString("base64");
+
+    const focusResponse = await fetch(focusUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${basicAuth}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const focusData = await focusResponse.json();
+
+    if (!focusResponse.ok) {
+      return {
+        success: false,
+        error: focusData.mensagem || focusData.erros || "Erro na transmissão para a SEFAZ.",
+      };
+    }
+
+    const numeroEmitido = payload.numero || 1;
+    const serieEmitida = parseInt(payload.serie || "1", 10);
+    const chaveEmitida = focusData.chave_nfe || null;
+    const statusFocus =
+      focusData.status === "autorizado" ? StatusNota.AUTORIZADA : StatusNota.PENDENTE;
+
+    const newInvoice = await tenantPrisma.invoice.create({
+      data: {
+        tenantId,
+        numero: numeroEmitido,
+        serie: serieEmitida,
+        chaveAcesso: chaveEmitida,
+        tipo: TipoNota.SAIDA,
+        finalidade: "INDUSTRIALIZAÇÃO COBRANÇA",
+        modalidadeEmissao: "COBRANCA_INDUSTRIALIZACAO",
+        espelhoNumero: numeroControleEspelho || null,
+        chaveNfeReferenciada: chaveNfeReferenciada || null,
+        status: statusFocus,
+        valorTotal,
+        dataEmissao: new Date(),
+        partnerId: partner.id,
+        focusNfeRef: idempotencyKey,
+        idempotencyKey,
+        rawJson: {
+          focusPayload: payload,
+          focusResponse: focusData,
+          espelhoControle: numeroControleEspelho,
+          previsaoPagamento: previsaoPagamento || null,
+          remessaOrigemId: remessaOrigemId || null,
+          modalidade: "COBRANCA_INDUSTRIALIZACAO",
+        },
+      },
+    });
+
+    // Incrementa próximo número
+    await prismaAdmin.tenant.update({
+      where: { id: tenantId },
+      data: { proximoNumero: { increment: 1 } },
+    });
+
+    // Indexa histórico de preços praticados por referência e fábrica parceira
+    try {
+      const itensCobrados = payload?.itens || [];
+      for (const item of itensCobrados) {
+        const refItem = String(item.codigo || "").trim().toUpperCase();
+        const valorUnit = Number(item.valor_unitario_comercial || 0);
+        if (refItem && valorUnit > 0) {
+          await tenantPrisma.partnerPriceHistory.upsert({
+            where: {
+              tenantId_partnerId_referencia: {
+                tenantId,
+                partnerId: partner.id,
+                referencia: refItem,
+              },
+            },
+            create: {
+              tenantId,
+              partnerId: partner.id,
+              referencia: refItem,
+              descricao: item.descricao || null,
+              valorUnitario: valorUnit,
+              ultimaNotaId: newInvoice.id,
+              dataRegistro: new Date(),
+            },
+            update: {
+              valorUnitario: valorUnit,
+              descricao: item.descricao || undefined,
+              ultimaNotaId: newInvoice.id,
+              dataRegistro: new Date(),
+            },
+          });
+        }
+      }
+    } catch (priceErr) {
+      console.warn("[emitirCobrancaEspelhoAction] Aviso ao indexar histórico de preço:", priceErr);
+    }
+
+    // Se já veio autorizado com arquivos, salva-os
+    if (focusData.status === "autorizado" && chaveEmitida) {
+      if (focusData.caminho_danfe) {
+        try {
+          const pdfDoc = await downloadFocusNfeDocument(focusData.caminho_danfe, token, tenant.ambiente);
+          if (pdfDoc.success && pdfDoc.buffer && pdfDoc.buffer.slice(0, 5).toString() === "%PDF-") {
+            const pdfUrl = await uploadInvoicePdf(tenantId, chaveEmitida, pdfDoc.buffer);
+            await tenantPrisma.invoice.update({ where: { id: newInvoice.id }, data: { pdfUrl } });
+          }
+        } catch (_) {}
+      }
+      if (focusData.caminho_xml_nota_fiscal) {
+        try {
+          const xmlDoc = await downloadFocusNfeDocument(focusData.caminho_xml_nota_fiscal, token, tenant.ambiente);
+          if (xmlDoc.success && xmlDoc.buffer && xmlDoc.buffer.slice(0, 1).toString() === "<") {
+            const xmlUrl = await uploadInvoiceXml(tenantId, chaveEmitida, xmlDoc.buffer.toString("utf-8"));
+            await tenantPrisma.invoice.update({ where: { id: newInvoice.id }, data: { xmlUrl } });
+          }
+        } catch (_) {}
+      }
+    }
+
+    revalidatePath("/notas");
+    revalidatePath("/");
+
+    return {
+      success: true,
+      invoiceId: newInvoice.id,
+      numero: numeroEmitido,
+      status: statusFocus,
+      mensagemSefaz: focusData.mensagem_sefaz || "Nota enviada para processamento na SEFAZ",
+    };
+  } catch (err: any) {
+    console.error("[emitirCobrancaEspelhoAction] Erro:", err);
+    return {
+      success: false,
+      error: err.message || "Erro inesperado ao transmitir NF de Cobrança.",
+    };
+  }
+}
+
+/**
+ * Envia a NF-e autorizada por e-mail para o parceiro / fábrica / financeiro
+ * Identificando o Tenant no remetente (ex: "H E LEMOS CONFECCAO via Nota Fácil <notas@appnotafacil.online>")
+ * e anexando os arquivos oficiais DANFE (PDF) e XML
+ */
+export async function sendInvoiceEmailAction({
+  invoiceId,
+  toEmail,
+  ccEmails,
+}: {
+  invoiceId: string;
+  toEmail: string;
+  ccEmails?: string[];
+}) {
+  try {
+    const { tenantId, tenantPrisma, session } = await requireTenantSession();
+
+    const cleanTo = toEmail?.trim().toLowerCase();
+    if (!cleanTo || !cleanTo.includes("@")) {
+      return { success: false, error: "Informe um endereço de e-mail de destinatário válido." };
+    }
+
+    const invoice = await tenantPrisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: {
+        partner: true,
+      },
+    });
+
+    if (!invoice) {
+      return { success: false, error: "Nota fiscal não encontrada." };
+    }
+
+    if (invoice.status !== StatusNota.AUTORIZADA) {
+      return {
+        success: false,
+        error: "Apenas notas autorizadas pela SEFAZ podem ser enviadas por e-mail.",
+      };
+    }
+
+    const tenant = await prismaAdmin.tenant.findUnique({
+      where: { id: tenantId },
+    });
+
+    if (!tenant) {
+      return { success: false, error: "Dados da oficina emissora não encontrados." };
+    }
+
+    // 1. Tenta obter o PDF do DANFE
+    let pdfBuffer: Buffer | null = null;
+    const chaveFinal = invoice.chaveAcesso || invoice.id;
+
+    // Primeiro via Storage Key padrão
+    pdfBuffer = await getFileFromStorage(`invoices/${tenantId}/${chaveFinal}.pdf`);
+
+    // Se não encontrou, tenta buscar da URL do PDF
+    if (!pdfBuffer && invoice.pdfUrl) {
+      try {
+        const resp = await fetch(invoice.pdfUrl);
+        if (resp.ok) {
+          const arrBuf = await resp.arrayBuffer();
+          pdfBuffer = Buffer.from(arrBuf);
+        }
+      } catch (_) {}
+    }
+
+    // 2. Tenta obter o XML
+    let xmlBuffer: Buffer | null = null;
+    xmlBuffer = await getFileFromStorage(`invoices/${tenantId}/${chaveFinal}.xml`);
+
+    if (!xmlBuffer && invoice.xmlUrl) {
+      try {
+        const resp = await fetch(invoice.xmlUrl);
+        if (resp.ok) {
+          const arrBuf = await resp.arrayBuffer();
+          xmlBuffer = Buffer.from(arrBuf);
+        }
+      } catch (_) {}
+    }
+
+    // Se ainda faltar algum documento e a nota tiver dados no Focus NFe, tenta baixar direto
+    if ((!pdfBuffer || !xmlBuffer) && (tenant.focusNfeTokenProducao || tenant.focusNfeTokenHomologacao)) {
+      try {
+        const token = (tenant.ambiente === "PRODUCAO" ? tenant.focusNfeTokenProducao : tenant.focusNfeTokenHomologacao) || "";
+        if (token && invoice.focusNfeRef) {
+          const statusFocus = await getNfeStatusFromFocus({
+            ref: invoice.focusNfeRef,
+            token,
+            ambiente: tenant.ambiente,
+          });
+          if (statusFocus.success && statusFocus.data) {
+            if (!pdfBuffer && statusFocus.data.caminho_danfe) {
+              const pdfDoc = await downloadFocusNfeDocument(statusFocus.data.caminho_danfe, token, tenant.ambiente);
+              if (pdfDoc.success && pdfDoc.buffer) {
+                pdfBuffer = pdfDoc.buffer;
+              }
+            }
+            if (!xmlBuffer && statusFocus.data.caminho_xml_nota_fiscal) {
+              const xmlDoc = await downloadFocusNfeDocument(statusFocus.data.caminho_xml_nota_fiscal, token, tenant.ambiente);
+              if (xmlDoc.success && xmlDoc.buffer) {
+                xmlBuffer = xmlDoc.buffer;
+              }
+            }
+          }
+        }
+      } catch (focusErr) {
+        console.warn("[sendInvoiceEmailAction] Erro ao tentar fallback Focus NFe:", focusErr);
+      }
+    }
+
+    // Monta lista de destinatários
+    const toList = [cleanTo];
+    if (ccEmails && ccEmails.length > 0) {
+      for (const cc of ccEmails) {
+        const trimmed = cc.trim().toLowerCase();
+        if (trimmed && trimmed.includes("@") && !toList.includes(trimmed)) {
+          toList.push(trimmed);
+        }
+      }
+    }
+
+    // Dispara o e-mail via Resend
+    const nomeOficina = tenant.nomeFantasia || tenant.razaoSocial;
+    const res = await sendInvoiceEmail({
+      to: toList,
+      tenantInfo: {
+        razaoSocial: tenant.razaoSocial,
+        nomeFantasia: tenant.nomeFantasia,
+        cnpj: tenant.cnpj,
+        emailPrincipal: tenant.emailPrincipal || undefined,
+        telefoneContato: tenant.telefoneContato || undefined,
+        chavePix: tenant.chavePix || undefined,
+        dadosBancarios: tenant.dadosBancarios || undefined,
+      },
+      razaoSocialEmitente: tenant.razaoSocial,
+      numeroNota: invoice.numero || 0,
+      serieNota: invoice.serie || 1,
+      chaveAcesso: invoice.chaveAcesso || "",
+      valorTotal: Number(invoice.valorTotal),
+      modalidade: invoice.modalidadeEmissao,
+      parceiroNome: invoice.partner?.nomeFantasia || invoice.partner?.razaoSocial || null,
+      danfePdfBuffer: pdfBuffer || undefined,
+      xmlContent: xmlBuffer || undefined,
+    });
+
+    if (!res.success) {
+      return {
+        success: false,
+        error: res.error || "Falha ao enviar e-mail através do provedor.",
+      };
+    }
+
+    // Grava auditoria
+    await prismaAdmin.auditLog.create({
+      data: {
+        tenantId,
+        actorType: "USUARIO_TENANT",
+        actorId: session.user.id,
+        acao: "ENVIO_NFE_EMAIL",
+        entidade: "Invoice",
+        entidadeId: invoice.id,
+        detalhe: {
+          destinatarios: toList,
+          numeroNota: invoice.numero,
+          chaveAcesso: invoice.chaveAcesso,
+          anexosPdf: !!pdfBuffer,
+          anexosXml: !!xmlBuffer,
+        },
+      },
+    });
+
+    return {
+      success: true,
+      message: `NF-e Nº ${invoice.numero} enviada com sucesso para ${toList.join(", ")}!`,
+    };
+  } catch (err: any) {
+    console.error("[sendInvoiceEmailAction] Erro:", err);
+    return {
+      success: false,
+      error: err.message || "Erro inesperado ao enviar a nota fiscal por e-mail.",
+    };
+  }
+}
+

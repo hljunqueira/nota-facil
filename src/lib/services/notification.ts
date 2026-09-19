@@ -4,7 +4,7 @@
  */
 
 import { sendWhatsAppDocument, sendWhatsAppMessage } from "./whatsapp";
-import { sendInvoiceEmail } from "./email";
+import { sendInvoiceEmail, TenantEmailInfo } from "./email";
 import { prismaAdmin } from "@/lib/prismaAdmin";
 
 export interface InvoiceNotificationPayload {
@@ -22,6 +22,8 @@ export interface InvoiceNotificationPayload {
   danfePdfUrl?: string;
   xmlContent?: string | Buffer;
   xmlUrl?: string;
+  tenantInfo?: TenantEmailInfo;
+  modalidade?: string | null;
 }
 
 export interface NotificationResult {
@@ -140,11 +142,14 @@ export async function sendInvoiceNotification(
     try {
       const emailResult = await sendInvoiceEmail({
         to: destinatarioEmail,
+        tenantInfo: payload.tenantInfo,
         razaoSocialEmitente,
         numeroNota,
         serieNota,
         chaveAcesso,
         valorTotal,
+        modalidade: payload.modalidade,
+        parceiroNome: destinatarioNome,
         danfePdfBuffer,
         xmlContent,
       });

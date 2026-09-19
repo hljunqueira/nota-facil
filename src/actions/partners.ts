@@ -82,8 +82,15 @@ export async function getPartnersAction(params?: { search?: string }) {
     razaoSocial: p.razaoSocial,
     nomeFantasia: p.nomeFantasia,
     cnpj: p.cnpj,
+    inscricaoEstadual: p.inscricaoEstadual,
     email: p.email,
     telefone: p.telefone,
+    modoEmissao: p.modoEmissao || "SEPARADO",
+    modeloEspelho: p.modeloEspelho || "RITMI",
+    modeloEspelhoUrl: p.modeloEspelhoUrl,
+    emailExpedicao: p.emailExpedicao,
+    emailFinanceiro: p.emailFinanceiro,
+    whatsappFinanceiro: p.whatsappFinanceiro,
     totalInvoices: p._count.invoices,
     totalRecipients: p._count.recipients,
     createdAt: p.createdAt.toISOString(),
@@ -157,17 +164,26 @@ export async function savePartnerAction(
     };
   }
 
+  const dataPayload = {
+    razaoSocial: parsed.razaoSocial.trim(),
+    nomeFantasia: parsed.nomeFantasia?.trim() || null,
+    cnpj: cleanCnpj,
+    inscricaoEstadual: parsed.inscricaoEstadual?.trim() || null,
+    email: parsed.email?.trim() || null,
+    telefone: parsed.telefone?.replace(/\D/g, "") || null,
+    modoEmissao: parsed.modoEmissao || "SEPARADO",
+    modeloEspelho: parsed.modeloEspelho?.trim() || "RITMI",
+    modeloEspelhoUrl: parsed.modeloEspelhoUrl?.trim() || null,
+    emailExpedicao: parsed.emailExpedicao?.trim() || null,
+    emailFinanceiro: parsed.emailFinanceiro?.trim() || null,
+    whatsappFinanceiro: parsed.whatsappFinanceiro?.replace(/\D/g, "") || null,
+  };
+
   if (input.id) {
     // Atualização
     const partner = await tenantPrisma.partner.update({
       where: { id: input.id },
-      data: {
-        razaoSocial: parsed.razaoSocial.trim(),
-        nomeFantasia: parsed.nomeFantasia?.trim() || null,
-        cnpj: cleanCnpj,
-        email: parsed.email?.trim() || null,
-        telefone: parsed.telefone?.replace(/\D/g, "") || null,
-      },
+      data: dataPayload,
     });
 
     await recordAuditLog(
@@ -175,7 +191,7 @@ export async function savePartnerAction(
       session.user.id,
       "PARTNER_ATUALIZADO",
       partner.id,
-      { razaoSocial: partner.razaoSocial, cnpj: partner.cnpj }
+      { razaoSocial: partner.razaoSocial, cnpj: partner.cnpj, modoEmissao: partner.modoEmissao }
     );
 
     revalidatePath("/parceiros");
@@ -192,11 +208,7 @@ export async function savePartnerAction(
     const partner = await tenantPrisma.partner.create({
       data: {
         tenantId,
-        razaoSocial: parsed.razaoSocial.trim(),
-        nomeFantasia: parsed.nomeFantasia?.trim() || null,
-        cnpj: cleanCnpj,
-        email: parsed.email?.trim() || null,
-        telefone: parsed.telefone?.replace(/\D/g, "") || null,
+        ...dataPayload,
       },
     });
 
@@ -205,7 +217,7 @@ export async function savePartnerAction(
       session.user.id,
       "PARTNER_CRIADO",
       partner.id,
-      { razaoSocial: partner.razaoSocial, cnpj: partner.cnpj }
+      { razaoSocial: partner.razaoSocial, cnpj: partner.cnpj, modoEmissao: partner.modoEmissao }
     );
 
     revalidatePath("/parceiros");

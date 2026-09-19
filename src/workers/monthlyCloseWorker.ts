@@ -124,19 +124,55 @@ export async function executeMonthlyClose(
   // 4. Monta as entradas do arquivo ZIP
   const zipEntries: Array<{ name: string; content: Buffer | string }> = [];
 
-  // Relatório consolidado em formato CSV para conferência do contador
-  let csvReport = "Numero;Serie;Tipo;ChaveAcesso;Parceiro;CNPJ;ValorTotal;DataEmissao;Status\n";
+  // Relatório consolidado em formato CSV para conferência do contador com segregação de CFOPs
+  let csvReport = "Numero;Serie;Tipo;Modalidade;CFOP_Principal;ChaveAcesso;Parceiro;CNPJ;ValorTotal;BaseCalculoSimples;DataEmissao;Status\n";
+  let totalValor = 0;
+  let totalTributavelSimples = 0;
+  let totalNaoTributavel = 0;
 
   for (const inv of invoices) {
     const chave = inv.chaveAcesso || `NF_${inv.numero}`;
-    const valorFmt = Number(inv.valorTotal).toFixed(2).replace(".", ",");
+    const valor = Number(inv.valorTotal) || 0;
+    totalValor += valor;
+
+    let modalidade = inv.modalidadeEmissao || (inv.tipo === "ENTRADA" ? "REMESSA_ENTRADA" : "OUTRO");
+    let cfopPrincipal = "5902";
+    let baseCalculoSimples = 0;
+
+    if (inv.modalidadeEmissao === "COBRANCA_INDUSTRIALIZACAO") {
+      cfopPrincipal = "5124";
+      baseCalculoSimples = valor;
+      totalTributavelSimples += valor;
+    } else if (inv.modalidadeEmissao === "RETORNO_MERCADORIA") {
+      cfopPrincipal = "5902";
+      baseCalculoSimples = 0;
+      totalNaoTributavel += valor;
+    } else if (inv.modalidadeEmissao === "CONJUNTA") {
+      cfopPrincipal = "5902/5124";
+      const raw: any = inv.rawJson || {};
+      const itens = raw?.payloadEnviado?.itens || raw?.itens || [];
+      const itemServico = itens.find((it: any) => it.cfop === "5124");
+      const valorServico = itemServico ? Number(itemServico.valor_total || 0) : 0;
+      baseCalculoSimples = valorServico;
+      totalTributavelSimples += valorServico;
+      totalNaoTributavel += (valor - valorServico);
+    } else if (inv.tipo === "ENTRADA") {
+      cfopPrincipal = "5901";
+      baseCalculoSimples = 0;
+    } else {
+      baseCalculoSimples = 0;
+      totalNaoTributavel += valor;
+    }
+
+    const valorFmt = valor.toFixed(2).replace(".", ",");
+    const baseSimplesFmt = baseCalculoSimples.toFixed(2).replace(".", ",");
     const dataFmt = inv.dataEmissao
       ? new Date(inv.dataEmissao).toLocaleDateString("pt-BR")
       : "";
-    const parceiroNome = inv.partner?.razaoSocial || "N/A";
+    const parceiroNome = (inv.partner?.razaoSocial || "N/A").replace(/;/g, " ");
     const parceiroCnpj = inv.partner?.cnpj || "N/A";
 
-    csvReport += `${inv.numero};${inv.serie};${inv.tipo};${chave};${parceiroNome};${parceiroCnpj};${valorFmt};${dataFmt};${inv.status}\n`;
+    csvReport += `${inv.numero};${inv.serie};${inv.tipo};${modalidade};${cfopPrincipal};${chave};${parceiroNome};${parceiroCnpj};${valorFmt};${baseSimplesFmt};${dataFmt};${inv.status}\n`;
 
     // Inclui XML se disponível
     if (inv.xmlUrl) {
@@ -175,6 +211,18 @@ export async function executeMonthlyClose(
     }
   }
 
+  // Rodapé com Resumo Fiscal para o Contador
+  const totalGeralFmt = totalValor.toFixed(2).replace(".", ",");
+  const totalTributavelFmt = totalTributavelSimples.toFixed(2).replace(".", ",");
+  const totalNaoTributavelFmt = totalNaoTributavel.toFixed(2).replace(".", ",");
+
+  csvReport += `\n`;
+  csvReport += `--- RESUMO FISCAL PARA APURACAO DO SIMPLES NACIONAL (LC 123/2006) ---\n`;
+  csvReport += `Total Geral Movimentado no Periodo:;R$ ${totalGeralFmt}\n`;
+  csvReport += `BASE DE CALCULO TRIBUTAVEL (CFOP 5124 - Anexo II Industria):;R$ ${totalTributavelFmt}\n`;
+  csvReport += `TOTAL NAO TRIBUTAVEL (CFOP 5902 - Retorno de Insumos de Terceiros):;R$ ${totalNaoTributavelFmt}\n`;
+  csvReport += `AVISO AO CONTADOR:;Apenas o valor indicado na BASE DE CALCULO TRIBUTAVEL (CFOP 5124) deve compor a receita bruta para a guia DAS. Os valores sob CFOP 5902 representam mero retorno de mercadoria de terceiros sem acrescimo patrimonial.\n`;
+
   // Adiciona o relatório CSV na raiz do ZIP
   zipEntries.push({
     name: `Relatorio_Fiscal_${tenant.razaoSocial.replace(/\W+/g, "_")}_${mesAnoFile}.csv`,
@@ -197,6 +245,13 @@ export async function executeMonthlyClose(
     try {
       await sendMonthlyClosureEmail({
         to: emailDestinatario,
+        tenantInfo: {
+          razaoSocial: tenant.razaoSocial,
+          nomeFantasia: tenant.nomeFantasia,
+          cnpj: tenant.cnpj,
+          emailPrincipal: tenant.emailPrincipal || undefined,
+          telefoneContato: tenant.telefoneContato || undefined,
+        },
         razaoSocialOficina: tenant.razaoSocial,
         mesAno,
         zipBuffer,

@@ -13,6 +13,8 @@ services:
       - ASAAS_API_KEY=${ASAAS_API_KEY}
       - ASAAS_API_URL=${ASAAS_API_URL}
       - ASAAS_WEBHOOK_SECRET=${ASAAS_WEBHOOK_SECRET}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - EMAIL_FROM=${EMAIL_FROM}
     env_file:
       - .env
     depends_on:
@@ -22,6 +24,8 @@ services:
         condition: service_started
     networks:
       - notafacil-net
+    volumes:
+      - notafacil_storage:/app/public/storage
 
   worker:
     build:
@@ -34,6 +38,8 @@ services:
       - ASAAS_API_KEY=${ASAAS_API_KEY}
       - ASAAS_API_URL=${ASAAS_API_URL}
       - ASAAS_WEBHOOK_SECRET=${ASAAS_WEBHOOK_SECRET}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - EMAIL_FROM=${EMAIL_FROM}
     env_file:
       - .env
     depends_on:
@@ -43,6 +49,8 @@ services:
         condition: service_started
     networks:
       - notafacil-net
+    volumes:
+      - notafacil_storage:/app/public/storage
 
   postgres:
     image: postgres:16-alpine
@@ -123,6 +131,7 @@ volumes:
   notafacil_pgdata:
   notafacil_redis_data:
   notafacil_evo_data:
+  notafacil_storage:
 
 networks:
   notafacil-net:

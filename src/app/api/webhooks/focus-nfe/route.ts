@@ -83,11 +83,11 @@ async function handleNfeEmissaoEvent(payload: any) {
     const chaveFinal = chaveNfe || invoice.chaveAcesso || ref;
 
     // 1. Download e Backup do DANFE PDF
-    const caminhoDanfe = payload.caminho_danfe || `/v2/nfe/${ref}.pdf`;
-    if (token) {
+    const caminhoDanfe = payload.caminho_danfe;
+    if (token && caminhoDanfe) {
       try {
         const pdfDownload = await downloadFocusNfeDocument(caminhoDanfe, token, tenant.ambiente);
-        if (pdfDownload.success && pdfDownload.buffer) {
+        if (pdfDownload.success && pdfDownload.buffer && pdfDownload.buffer.slice(0, 5).toString() === "%PDF-") {
           pdfBuffer = pdfDownload.buffer;
           pdfUrl = await uploadInvoicePdf(tenant.id, chaveFinal, pdfBuffer);
         }
@@ -97,11 +97,11 @@ async function handleNfeEmissaoEvent(payload: any) {
     }
 
     // 2. Download e Backup do XML
-    const caminhoXml = payload.caminho_xml_nota_fiscal || `/v2/nfe/${ref}.xml`;
-    if (token) {
+    const caminhoXml = payload.caminho_xml_nota_fiscal;
+    if (token && caminhoXml) {
       try {
         const xmlDownload = await downloadFocusNfeDocument(caminhoXml, token, tenant.ambiente);
-        if (xmlDownload.success && xmlDownload.buffer) {
+        if (xmlDownload.success && xmlDownload.buffer && xmlDownload.buffer.slice(0, 1).toString() === "<") {
           xmlBuffer = xmlDownload.buffer;
           xmlUrl = await uploadInvoiceXml(tenant.id, chaveFinal, xmlBuffer);
         }
@@ -145,8 +145,29 @@ async function handleNfeEmissaoEvent(payload: any) {
 
     // 4. Disparo Automático da Mensageria (WhatsApp + Fallback E-mail)
     try {
+      const tenantInfo = {
+        razaoSocial: tenant.razaoSocial,
+        nomeFantasia: tenant.nomeFantasia,
+        cnpj: tenant.cnpj,
+        emailPrincipal: tenant.emailPrincipal,
+        telefoneContato: tenant.telefoneContato,
+      };
+
       // Notifica a fábrica parceira se houver contato
       if (invoice.partner) {
+        const isCobranca = invoice.modalidadeEmissao === "COBRANCA_INDUSTRIALIZACAO";
+        const isRetorno = invoice.modalidadeEmissao === "RETORNO_MERCADORIA";
+
+        let destinatarioEmail = invoice.partner.email;
+        let destinatarioTelefone = invoice.partner.telefone;
+
+        if (isCobranca) {
+          destinatarioEmail = invoice.partner.emailFinanceiro || invoice.partner.email;
+          destinatarioTelefone = invoice.partner.whatsappFinanceiro || invoice.partner.telefone;
+        } else if (isRetorno) {
+          destinatarioEmail = invoice.partner.emailExpedicao || invoice.partner.email;
+        }
+
         await sendInvoiceNotification({
           tenantId: tenant.id,
           invoiceId: invoice.id,
@@ -156,12 +177,14 @@ async function handleNfeEmissaoEvent(payload: any) {
           chaveAcesso: chaveFinal,
           valorTotal: Number(invoice.valorTotal),
           destinatarioNome: invoice.partner.razaoSocial,
-          destinatarioTelefone: invoice.partner.telefone,
-          destinatarioEmail: invoice.partner.email,
+          destinatarioTelefone,
+          destinatarioEmail,
           danfePdfBuffer: pdfBuffer,
           danfePdfUrl: pdfUrl || undefined,
           xmlContent: xmlBuffer,
           xmlUrl: xmlUrl || undefined,
+          tenantInfo,
+          modalidade: invoice.modalidadeEmissao,
         });
       }
 
@@ -186,6 +209,8 @@ async function handleNfeEmissaoEvent(payload: any) {
           danfePdfUrl: pdfUrl || undefined,
           xmlContent: xmlBuffer,
           xmlUrl: xmlUrl || undefined,
+          tenantInfo,
+          modalidade: invoice.modalidadeEmissao,
         });
       }
     } catch (notifErr) {

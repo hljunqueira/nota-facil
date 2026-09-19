@@ -50,6 +50,8 @@ export async function getTenantConfigAction() {
         focusNfeIdEmpresa: true,
         focusNfeTokenHomologacao: true,
         focusNfeTokenProducao: true,
+        chavePix: true,
+        dadosBancarios: true,
       },
     }),
     tenantPrisma.notificationRecipient.findMany({
@@ -382,6 +384,8 @@ export async function updateTenantCompanyDataAction(data: {
   telefoneContato: string;
   emailPrincipal: string;
   inscricaoEstadual: string;
+  chavePix?: string | null;
+  dadosBancarios?: string | null;
 }) {
   const { tenantId, session } = await requireTenantSession();
 
@@ -404,6 +408,8 @@ export async function updateTenantCompanyDataAction(data: {
         telefoneContato: data.telefoneContato.trim(),
         emailPrincipal: data.emailPrincipal.trim().toLowerCase(),
         inscricaoEstadual: data.inscricaoEstadual?.trim() || "ISENTO",
+        chavePix: data.chavePix?.trim() || null,
+        dadosBancarios: data.dadosBancarios?.trim() || null,
       },
     });
 
@@ -422,6 +428,8 @@ export async function updateTenantCompanyDataAction(data: {
             telefoneContato: updated.telefoneContato,
             emailPrincipal: updated.emailPrincipal,
             inscricaoEstadual: updated.inscricaoEstadual,
+            chavePix: updated.chavePix,
+            dadosBancarios: updated.dadosBancarios,
           },
         },
       });

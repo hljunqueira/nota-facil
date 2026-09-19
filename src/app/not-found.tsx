@@ -48,7 +48,7 @@ export default function NotFound() {
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-primary hover:bg-primaryDark text-white font-semibold text-sm shadow-lg shadow-primary/25 transition-all duration-200 hover:-translate-y-0.5 active:scale-95"
           >
             <LayoutDashboard className="w-4 h-4" />
-            <span>Ir para o Dashboard</span>
+            <span>Ir para a Visão Geral</span>
           </Link>
 
           <Link
