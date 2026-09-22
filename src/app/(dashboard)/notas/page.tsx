@@ -24,6 +24,7 @@ import {
   DollarSign,
   Mail,
   Truck,
+  Trash2,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import {
@@ -31,6 +32,7 @@ import {
   getInversionPreviewAction,
   getBatchInversionPreviewAction,
   checkInvoiceStatusAction,
+  deleteInvoiceAction,
 } from "@/actions/invoices";
 import { InversionPreviewDialog } from "@/components/modules/invoices/InversionPreviewDialog";
 import { ImportXmlModal } from "@/components/modules/invoices/ImportXmlModal";
@@ -39,6 +41,7 @@ import { MonthlyCloseModal } from "@/components/modules/invoices/MonthlyCloseMod
 import { CancelInvoiceModal } from "@/components/modules/invoices/CancelInvoiceModal";
 import { SendInvoiceEmailModal } from "@/components/modules/invoices/SendInvoiceEmailModal";
 import { RomaneioModal } from "@/components/modules/invoices/RomaneioModal";
+import { DeleteInvoiceModal } from "@/components/modules/invoices/DeleteInvoiceModal";
 import { InversionPreparationResult } from "@/lib/services/inversion";
 import { WhatsAppIcon } from "@/components/ui/WhatsAppIcon";
 
@@ -61,6 +64,9 @@ export default function NotasPage() {
   const [selectedInvoiceForCancel, setSelectedInvoiceForCancel] = useState<any | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [statusCheckingId, setStatusCheckingId] = useState<string | null>(null);
+
+  // Exclusão de NF-e (Rejeitadas, Canceladas, Pendentes ou Entradas)
+  const [selectedInvoiceForDelete, setSelectedInvoiceForDelete] = useState<any | null>(null);
 
   // Envio por E-mail
   const { data: session } = useSession();
@@ -832,6 +838,17 @@ export default function NotasPage() {
                           <Mail className="w-4 h-4" />
                         </button>
                       )}
+
+                      {/* Excluir Nota */}
+                      {inv.status !== "AUTORIZADA" && (
+                        <button
+                          onClick={() => setSelectedInvoiceForDelete(inv)}
+                          title="Excluir Nota"
+                          className="p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200/60 min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1231,6 +1248,17 @@ export default function NotasPage() {
                               <span>Romaneio</span>
                             </button>
                           )}
+
+                          {/* Excluir Nota */}
+                          {inv.status !== "AUTORIZADA" && (
+                            <button
+                              onClick={() => setSelectedInvoiceForDelete(inv)}
+                              title="Excluir Nota"
+                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 hover:text-rose-700 cursor-pointer transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1372,6 +1400,16 @@ export default function NotasPage() {
         onClose={() => {
           setShowRomaneioModal(false);
           setSelectedInvoiceForRomaneio(null);
+        }}
+      />
+
+      <DeleteInvoiceModal
+        isOpen={!!selectedInvoiceForDelete}
+        invoice={selectedInvoiceForDelete}
+        onClose={() => setSelectedInvoiceForDelete(null)}
+        onSuccess={(msg) => {
+          setToastMessage(msg);
+          loadInvoices(true);
         }}
       />
     </div>

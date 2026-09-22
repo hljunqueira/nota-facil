@@ -877,4 +877,77 @@ export async function updateTenantManagementAction(
   }
 }
 
+/**
+ * Retorna todas as notas fiscais de uma oficina para o modal administrativo
+ */
+export async function getTenantInvoicesAdminAction(tenantId: string) {
+  await requireAdminSession();
+
+  const invoices = await prismaAdmin.invoice.findMany({
+    where: { tenantId },
+    orderBy: { dataEmissao: "desc" },
+    include: {
+      partner: {
+        select: {
+          id: true,
+          razaoSocial: true,
+          nomeFantasia: true,
+          cnpj: true,
+        },
+      },
+    },
+  });
+
+  return invoices.map((inv) => ({
+    ...inv,
+    valorTotal: Number(inv.valorTotal),
+  }));
+}
+
+/**
+ * Exclui uma nota fiscal como Administrador Master (permite exclusão direta com registro de auditoria)
+ */
+export async function adminDeleteInvoiceAction(invoiceId: string) {
+  const session = await requireAdminSession();
+
+  try {
+    const invoice = await prismaAdmin.invoice.findUnique({
+      where: { id: invoiceId },
+    });
+
+    if (!invoice) {
+      return { success: false, error: "Nota fiscal não encontrada ou já excluída." };
+    }
+
+    await prismaAdmin.invoice.delete({
+      where: { id: invoiceId },
+    });
+
+    await prismaAdmin.auditLog.create({
+      data: {
+        tenantId: invoice.tenantId,
+        actorType: "ADMIN",
+        actorId: session.user.id,
+        acao: "EXCLUSAO_NOTA_ADMIN",
+        entidade: "Invoice",
+        entidadeId: invoiceId,
+        detalhe: {
+          adminEmail: session.user.email,
+          numero: invoice.numero,
+          serie: invoice.serie,
+          tipo: invoice.tipo,
+          status: invoice.status,
+          chaveAcesso: invoice.chaveAcesso,
+          valorTotal: Number(invoice.valorTotal),
+        },
+      },
+    });
+
+    revalidatePath("/admin/tenants");
+    return { success: true };
+  } catch (err: any) {
+    console.error("[adminDeleteInvoiceAction] Erro:", err);
+    return { success: false, error: err.message || "Erro ao excluir nota fiscal." };
+  }
+}
 

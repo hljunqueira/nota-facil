@@ -1304,3 +1304,60 @@ export async function sendInvoiceEmailAction({
   }
 }
 
+/**
+ * Exclui uma nota fiscal do tenant (apenas se não estiver AUTORIZADA na SEFAZ)
+ */
+export async function deleteInvoiceAction(invoiceId: string) {
+  try {
+    const { session, tenantId, tenantPrisma } = await requireTenantSession();
+
+    const invoice = await tenantPrisma.invoice.findUnique({
+      where: { id: invoiceId },
+    });
+
+    if (!invoice) {
+      return { success: false, error: "Nota fiscal não encontrada ou já excluída." };
+    }
+
+    if (invoice.status === "AUTORIZADA") {
+      return {
+        success: false,
+        error: "Notas autorizadas na SEFAZ não podem ser excluídas diretamente. Cancele a nota primeiro.",
+      };
+    }
+
+    await tenantPrisma.invoice.delete({
+      where: { id: invoiceId },
+    });
+
+    await prismaAdmin.auditLog.create({
+      data: {
+        tenantId,
+        actorType: "USER",
+        actorId: session.user.id,
+        acao: "EXCLUSAO_NOTA",
+        entidade: "Invoice",
+        entidadeId: invoiceId,
+        detalhe: {
+          userEmail: session.user.email,
+          numero: invoice.numero,
+          serie: invoice.serie,
+          tipo: invoice.tipo,
+          status: invoice.status,
+          chaveAcesso: invoice.chaveAcesso,
+          valorTotal: Number(invoice.valorTotal),
+        },
+      },
+    });
+
+    revalidatePath("/notas");
+    revalidatePath("/dashboard");
+    return { success: true };
+  } catch (err: any) {
+    console.error("[deleteInvoiceAction] Erro:", err);
+    return {
+      success: false,
+      error: err.message || "Erro inesperado ao excluir nota fiscal.",
+    };
+  }
+}

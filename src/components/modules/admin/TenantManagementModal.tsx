@@ -14,11 +14,16 @@ import {
   ExternalLink,
   Save,
   Check,
+  FileText,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import {
   getTenantFullDetailsAction,
   syncTenantAsaasAction,
   updateTenantManagementAction,
+  getTenantInvoicesAdminAction,
+  adminDeleteInvoiceAction,
 } from "@/actions/admin";
 import { testTenantFocusConnectionAction } from "@/actions/tenantConfig";
 
@@ -69,6 +74,12 @@ export function TenantManagementModal({
   const [totalNotas, setTotalNotas] = useState(0);
   const [totalParceiros, setTotalParceiros] = useState(0);
 
+  // Aba ativa e Gestão de Notas
+  const [activeTab, setActiveTab] = useState<"DADOS" | "NOTAS">("DADOS");
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
+
   const loadData = async () => {
     if (!tenantId) return;
     setLoading(true);
@@ -110,8 +121,51 @@ export function TenantManagementModal({
   useEffect(() => {
     if (isOpen && tenantId) {
       loadData();
+      if (activeTab === "NOTAS") {
+        loadTenantInvoices();
+      }
     }
   }, [isOpen, tenantId]);
+
+  const loadTenantInvoices = async () => {
+    if (!tenantId) return;
+    setLoadingInvoices(true);
+    try {
+      const data = await getTenantInvoicesAdminAction(tenantId);
+      setInvoices(data);
+    } catch (err: any) {
+      setToast({ type: "error", msg: "Erro ao carregar notas fiscais da oficina." });
+    } finally {
+      setLoadingInvoices(false);
+    }
+  };
+
+  const handleDeleteInvoice = async (inv: any) => {
+    if (
+      !confirm(
+        `Confirma a exclusão definitiva da NF-e Nº ${inv.numero} (Série ${inv.serie})?\n\nEsta ação apagará permanentemente o registro desta nota fiscal.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingInvoiceId(inv.id);
+    try {
+      const res = await adminDeleteInvoiceAction(inv.id);
+      if (res.success) {
+        setToast({ type: "success", msg: `NF-e Nº ${inv.numero} excluída com sucesso!` });
+        setTotalNotas((prev) => Math.max(0, prev - 1));
+        await loadTenantInvoices();
+        onSuccess();
+      } else {
+        setToast({ type: "error", msg: res.error || "Erro ao excluir nota fiscal." });
+      }
+    } catch (err: any) {
+      setToast({ type: "error", msg: err.message || "Erro inesperado ao excluir nota." });
+    } finally {
+      setDeletingInvoiceId(null);
+    }
+  };
 
   if (!isOpen || !tenantId) return null;
 
@@ -234,11 +288,173 @@ export function TenantManagementModal({
           </div>
         </div>
 
-        {/* Conteúdo com 4 Grids */}
+        {/* Sub-header com Seletor de Abas */}
+        <div className="flex items-center gap-2 px-5 border-b border-slate-200 bg-slate-50/70">
+          <button
+            type="button"
+            onClick={() => setActiveTab("DADOS")}
+            className={`inline-flex items-center gap-1.5 py-2.5 px-3 border-b-2 text-xs font-semibold transition-colors cursor-pointer ${
+              activeTab === "DADOS"
+                ? "border-slate-900 text-slate-900"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>Configurações da Oficina</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("NOTAS");
+              loadTenantInvoices();
+            }}
+            className={`inline-flex items-center gap-1.5 py-2.5 px-3 border-b-2 text-xs font-semibold transition-colors cursor-pointer ${
+              activeTab === "NOTAS"
+                ? "border-slate-900 text-slate-900"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Notas Fiscais ({totalNotas})</span>
+          </button>
+        </div>
+
+        {/* Conteúdo com Abas */}
         {loading ? (
           <div className="p-12 text-center text-slate-500 text-xs flex flex-col items-center gap-2">
             <RefreshCw className="h-5 w-5 animate-spin text-slate-700" />
             <span>Carregando dados completos da oficina...</span>
+          </div>
+        ) : activeTab === "NOTAS" ? (
+          <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto text-xs">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">Gestão de Notas Fiscais da Oficina</h3>
+                <p className="text-[11px] text-slate-500">
+                  Visualize o histórico de notas e exclua registros rejeitados, cancelados ou inconsistentes.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={loadTenantInvoices}
+                disabled={loadingInvoices}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingInvoices ? "animate-spin text-slate-900" : ""}`} />
+                <span>Atualizar Lista</span>
+              </button>
+            </div>
+
+            {loadingInvoices ? (
+              <div className="py-12 text-center text-slate-500 flex flex-col items-center gap-2">
+                <Loader2 className="w-6 h-6 animate-spin text-slate-700" />
+                <span>Carregando notas fiscais da oficina...</span>
+              </div>
+            ) : invoices.length === 0 ? (
+              <div className="py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                <FileText className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                <p className="font-semibold text-slate-700 text-xs">Nenhuma nota fiscal encontrada</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Esta oficina ainda não possui notas registradas no sistema.</p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                        <th className="py-2.5 px-3">Data</th>
+                        <th className="py-2.5 px-3">Tipo & NF-e</th>
+                        <th className="py-2.5 px-3">Fábrica</th>
+                        <th className="py-2.5 px-3">Chave SEFAZ</th>
+                        <th className="py-2.5 px-3">Valor</th>
+                        <th className="py-2.5 px-3">Status</th>
+                        <th className="py-2.5 px-3 text-right">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-[11px]">
+                      {invoices.map((inv) => (
+                        <tr key={inv.id} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="py-2.5 px-3 whitespace-nowrap font-medium text-slate-700">
+                            {new Intl.DateTimeFormat("pt-BR", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            }).format(new Date(inv.dataEmissao))}
+                          </td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <div className="font-bold text-slate-900">
+                              NF-e Nº {inv.numero} (Série {inv.serie})
+                            </div>
+                            <span
+                              className={`inline-block px-1.5 py-0.2 rounded text-[9px] font-bold uppercase mt-0.5 ${
+                                inv.tipo === "ENTRADA"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : inv.modalidadeEmissao === "COBRANCA_INDUSTRIALIZACAO"
+                                  ? "bg-amber-100 text-amber-900"
+                                  : "bg-emerald-100 text-emerald-800"
+                              }`}
+                            >
+                              {inv.tipo === "ENTRADA"
+                                ? "Remessa (5901)"
+                                : inv.modalidadeEmissao === "COBRANCA_INDUSTRIALIZACAO"
+                                ? "Cobrança (5124)"
+                                : "Retorno (5902)"}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 max-w-[150px] truncate text-slate-700" title={inv.partner?.razaoSocial}>
+                            {inv.partner?.razaoSocial || inv.partner?.nomeFantasia || "Fábrica"}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono text-[10px] text-slate-600 whitespace-nowrap">
+                            {inv.chaveAcesso ? `...${inv.chaveAcesso.slice(-8)}` : "Aguardando"}
+                          </td>
+                          <td className="py-2.5 px-3 font-bold text-slate-900 whitespace-nowrap">
+                            {new Intl.NumberFormat("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            }).format(Number(inv.valorTotal))}
+                          </td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                inv.status === "AUTORIZADA"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : inv.status === "REJEITADA"
+                                  ? "bg-rose-100 text-rose-800"
+                                  : inv.status === "CANCELADA"
+                                  ? "bg-slate-200 text-slate-700"
+                                  : "bg-amber-100 text-amber-800"
+                              }`}
+                            >
+                              {inv.status}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteInvoice(inv)}
+                              disabled={deletingInvoiceId === inv.id}
+                              title="Excluir Nota Fiscal permanentemente"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/60 font-semibold text-[11px] transition-colors cursor-pointer disabled:opacity-50"
+                            >
+                              {deletingInvoiceId === inv.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                              <span>Excluir</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto text-xs">
@@ -567,7 +783,9 @@ export function TenantManagementModal({
         {/* Rodapé de Ações */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-slate-200 bg-slate-50/70">
           <div className="text-[11px] text-slate-500">
-            Dica: Altere os dados e clique em Salvar Tudo para persistir as modificações.
+            {activeTab === "DADOS"
+              ? "Dica: Altere os dados e clique em Salvar Tudo para persistir as modificações."
+              : "Gerenciamento e exclusão administrativa de notas fiscais."}
           </div>
 
           <div className="flex items-center gap-2">
@@ -576,17 +794,19 @@ export function TenantManagementModal({
               type="button"
               className="px-3 py-1.5 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs font-medium transition-colors cursor-pointer"
             >
-              Cancelar
+              {activeTab === "DADOS" ? "Cancelar" : "Fechar"}
             </button>
-            <button
-              onClick={handleSaveAll}
-              disabled={saving || loading}
-              type="button"
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <Save className="h-3.5 w-3.5" />
-              <span>{saving ? "Salvando..." : "Salvar Alterações"}</span>
-            </button>
+            {activeTab === "DADOS" && (
+              <button
+                onClick={handleSaveAll}
+                disabled={saving || loading}
+                type="button"
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Save className="h-3.5 w-3.5" />
+                <span>{saving ? "Salvando..." : "Salvar Alterações"}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
