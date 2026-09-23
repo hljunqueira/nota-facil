@@ -1589,10 +1589,10 @@ export async function deleteInvoiceAction(invoiceId: string) {
       return { success: false, error: "Nota fiscal não encontrada ou já excluída." };
     }
 
-    if (invoice.status === "AUTORIZADA") {
+    if (invoice.status === "AUTORIZADA" && invoice.tipo === "SAIDA") {
       return {
         success: false,
-        error: "Notas autorizadas na SEFAZ não podem ser excluídas diretamente. Cancele a nota primeiro.",
+        error: "Notas de saída autorizadas na SEFAZ não podem ser excluídas diretamente. Cancele a nota primeiro.",
       };
     }
 

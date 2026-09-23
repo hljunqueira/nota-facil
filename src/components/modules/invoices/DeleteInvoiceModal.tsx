@@ -43,11 +43,11 @@ export function DeleteInvoiceModal({
 
   if (!isOpen || !invoice) return null;
 
-  const isAutorizada = invoice.status === "AUTORIZADA";
+  const isSaidaAutorizada = invoice.tipo === "SAIDA" && invoice.status === "AUTORIZADA";
 
   const handleDelete = async () => {
-    if (isAutorizada) {
-      setError("Notas autorizadas na SEFAZ não podem ser excluídas. Cancele a nota antes.");
+    if (isSaidaAutorizada) {
+      setError("Notas de saída autorizadas na SEFAZ não podem ser excluídas. Cancele a nota antes.");
       return;
     }
 
@@ -142,9 +142,9 @@ export function DeleteInvoiceModal({
           </div>
 
           {/* Aviso contextual */}
-          {isAutorizada ? (
+          {isSaidaAutorizada ? (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] leading-relaxed">
-              <strong>Nota Fiscal Autorizada:</strong> Esta nota está ativa na SEFAZ. Você deve efetuar o
+              <strong>Nota Fiscal de Saída Autorizada:</strong> Esta nota está ativa na SEFAZ. Você deve efetuar o
               cancelamento oficial na SEFAZ antes de removê-la do sistema.
             </div>
           ) : (
@@ -165,7 +165,7 @@ export function DeleteInvoiceModal({
               Cancelar
             </button>
 
-            {!isAutorizada && (
+            {!isSaidaAutorizada && (
               <button
                 type="button"
                 onClick={handleDelete}

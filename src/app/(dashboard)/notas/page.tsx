@@ -360,7 +360,7 @@ export default function NotasPage() {
             title="Exportar Romaneio de Carga para Transporte e Despacho"
           >
             <Truck className="w-4 h-4 text-slate-950 shrink-0" />
-            <span className="whitespace-nowrap">🚚 Exportar p/ Transporte</span>
+            <span className="whitespace-nowrap">Exportar para Transporte</span>
           </button>
           <Link
             href="/configuracoes?tab=fechamento"
@@ -401,20 +401,18 @@ export default function NotasPage() {
           <div className="flex items-center gap-1.5 bg-slate-100/80 p-1.5 rounded-2xl overflow-x-auto no-scrollbar max-w-full">
             <button
               onClick={() => setActiveTab("ALL")}
-              className={`flex items-center gap-2 px-3.5 py-2 sm:py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                activeTab === "ALL"
+              className={`flex items-center gap-2 px-3.5 py-2 sm:py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${activeTab === "ALL"
                   ? "bg-white text-ink shadow-xs"
                   : "text-slate-600 hover:text-ink hover:bg-white/50"
-              }`}
+                }`}
             >
               <Layers className="w-3.5 h-3.5" />
               <span>Todas</span>
               <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                  activeTab === "ALL"
+                className={`px-1.5 py-0.2 rounded-full text-[10px] ${activeTab === "ALL"
                     ? "bg-slate-900 text-white"
                     : "bg-slate-200 text-slate-700"
-                }`}
+                  }`}
               >
                 {counts.total}
               </span>
@@ -422,20 +420,18 @@ export default function NotasPage() {
 
             <button
               onClick={() => setActiveTab("ENTRADA")}
-              className={`flex items-center gap-2 px-3.5 py-2 sm:py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                activeTab === "ENTRADA"
+              className={`flex items-center gap-2 px-3.5 py-2 sm:py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${activeTab === "ENTRADA"
                   ? "bg-white text-blue-700 shadow-xs"
                   : "text-slate-600 hover:text-blue-700 hover:bg-white/50"
-              }`}
+                }`}
             >
               <ArrowDownLeft className="w-3.5 h-3.5 text-blue-600" />
               <span>Remessas</span>
               <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                  activeTab === "ENTRADA"
+                className={`px-1.5 py-0.2 rounded-full text-[10px] ${activeTab === "ENTRADA"
                     ? "bg-blue-600 text-white"
                     : "bg-blue-100 text-blue-800"
-                }`}
+                  }`}
               >
                 {counts.entradas}
               </span>
@@ -443,20 +439,18 @@ export default function NotasPage() {
 
             <button
               onClick={() => setActiveTab("SAIDA")}
-              className={`flex items-center gap-2 px-3.5 py-2 sm:py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                activeTab === "SAIDA"
+              className={`flex items-center gap-2 px-3.5 py-2 sm:py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${activeTab === "SAIDA"
                   ? "bg-white text-emerald-700 shadow-xs"
                   : "text-slate-600 hover:text-emerald-700 hover:bg-white/50"
-              }`}
+                }`}
             >
               <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
               <span>Retornos</span>
               <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                  activeTab === "SAIDA"
+                className={`px-1.5 py-0.2 rounded-full text-[10px] ${activeTab === "SAIDA"
                     ? "bg-emerald-600 text-white"
                     : "bg-emerald-100 text-emerald-800"
-                }`}
+                  }`}
               >
                 {counts.saidas}
               </span>
@@ -465,11 +459,10 @@ export default function NotasPage() {
             {counts.pendentes > 0 && (
               <button
                 onClick={() => setActiveTab("PENDENTE")}
-                className={`flex items-center gap-2 px-3.5 py-2 sm:py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeTab === "PENDENTE"
+                className={`flex items-center gap-2 px-3.5 py-2 sm:py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${activeTab === "PENDENTE"
                     ? "bg-white text-amber-700 shadow-xs"
                     : "text-slate-600 hover:text-amber-700 hover:bg-white/50"
-                }`}
+                  }`}
               >
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
                 <span>SEFAZ</span>
@@ -552,10 +545,10 @@ export default function NotasPage() {
             {searchQuery
               ? `Nenhuma nota encontrada para "${searchQuery}"`
               : activeTab === "ENTRADA"
-              ? "Nenhuma nota de remessa encontrada"
-              : activeTab === "SAIDA"
-              ? "Nenhuma nota de retorno emitida ainda"
-              : "Nenhuma nota fiscal encontrada"}
+                ? "Nenhuma nota de remessa encontrada"
+                : activeTab === "SAIDA"
+                  ? "Nenhuma nota de retorno emitida ainda"
+                  : "Nenhuma nota fiscal encontrada"}
           </h3>
           <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
             {searchQuery
@@ -583,22 +576,22 @@ export default function NotasPage() {
             {filteredInvoices.map((inv) => {
               const linkedRetorno = inv.chaveAcesso
                 ? invoices.find(
-                    (s) =>
-                      s.tipo === "SAIDA" &&
-                      s.chaveNfeReferenciada === inv.chaveAcesso &&
-                      (s.modalidadeEmissao === "RETORNO_MERCADORIA" || s.modalidadeEmissao === "CONJUNTA") &&
-                      s.status !== "CANCELADA"
-                  )
+                  (s) =>
+                    s.tipo === "SAIDA" &&
+                    s.chaveNfeReferenciada === inv.chaveAcesso &&
+                    (s.modalidadeEmissao === "RETORNO_MERCADORIA" || s.modalidadeEmissao === "CONJUNTA") &&
+                    s.status !== "CANCELADA"
+                )
                 : null;
 
               const linkedCobranca = inv.chaveAcesso
                 ? invoices.find(
-                    (s) =>
-                      s.tipo === "SAIDA" &&
-                      (s.chaveNfeReferenciada === inv.chaveAcesso || s.rawJson?.remessaOrigemId === inv.id) &&
-                      (s.modalidadeEmissao === "COBRANCA_INDUSTRIALIZACAO" || s.modalidadeEmissao === "CONJUNTA") &&
-                      s.status !== "CANCELADA"
-                  )
+                  (s) =>
+                    s.tipo === "SAIDA" &&
+                    (s.chaveNfeReferenciada === inv.chaveAcesso || s.rawJson?.remessaOrigemId === inv.id) &&
+                    (s.modalidadeEmissao === "COBRANCA_INDUSTRIALIZACAO" || s.modalidadeEmissao === "CONJUNTA") &&
+                    s.status !== "CANCELADA"
+                )
                 : null;
 
               const diasDesdeRetorno = linkedRetorno
@@ -610,11 +603,10 @@ export default function NotasPage() {
               return (
                 <div
                   key={`mob-${inv.id}`}
-                  className={`bg-white rounded-2xl border p-4 shadow-xs space-y-3 transition-all ${
-                    isSelected
+                  className={`bg-white rounded-2xl border p-4 shadow-xs space-y-3 transition-all ${isSelected
                       ? "border-primary ring-2 ring-primary/20 bg-emerald-50/20"
                       : "border-slate-200/80"
-                  }`}
+                    }`}
                 >
                   {/* Linha 1: Badges, Status e Checkbox */}
                   <div className="flex items-center justify-between gap-2">
@@ -652,15 +644,14 @@ export default function NotasPage() {
 
                     <div className="flex items-center gap-1.5">
                       <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                          inv.status === "AUTORIZADA"
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${inv.status === "AUTORIZADA"
                             ? "bg-emerald-50 text-emerald-700"
                             : inv.status === "PENDENTE"
-                            ? "bg-amber-50 text-amber-700"
-                            : inv.status === "CANCELADA"
-                            ? "bg-slate-100 text-slate-600"
-                            : "bg-red-50 text-red-700"
-                        }`}
+                              ? "bg-amber-50 text-amber-700"
+                              : inv.status === "CANCELADA"
+                                ? "bg-slate-100 text-slate-600"
+                                : "bg-red-50 text-red-700"
+                          }`}
                       >
                         {inv.status === "AUTORIZADA" && (
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
@@ -672,10 +663,10 @@ export default function NotasPage() {
                           {inv.status === "AUTORIZADA"
                             ? "Autorizada"
                             : inv.status === "PENDENTE"
-                            ? "Processando"
-                            : inv.status === "CANCELADA"
-                            ? "Cancelada"
-                            : "Rejeitada"}
+                              ? "Processando"
+                              : inv.status === "CANCELADA"
+                                ? "Cancelada"
+                                : "Rejeitada"}
                         </span>
                       </span>
                     </div>
@@ -752,7 +743,7 @@ export default function NotasPage() {
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-900 font-bold text-[11px] shadow-2xs hover:bg-emerald-100/60 cursor-pointer min-h-[36px]"
                             >
                               <Truck className="w-3.5 h-3.5 text-emerald-700" />
-                              <span>🚚 Romaneio</span>
+                              <span>Romaneio</span>
                             </button>
                           </div>
                           <div className="flex items-center gap-2 pt-1 border-t border-emerald-200/60 text-xs">
@@ -794,7 +785,7 @@ export default function NotasPage() {
                               className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-blue-200 text-blue-800 font-bold text-[11px] hover:bg-blue-100 cursor-pointer"
                             >
                               <Truck className="w-3.5 h-3.5 text-blue-600" />
-                              <span>🚚 Romaneio</span>
+                              <span>Romaneio</span>
                             </button>
                           </div>
                           <button
@@ -869,7 +860,7 @@ export default function NotasPage() {
                         className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-300 min-h-[44px] cursor-pointer shadow-2xs"
                       >
                         <Truck className="w-4 h-4 text-amber-700" />
-                        <span>🚚 Exportar Transporte</span>
+                        <span>Exportar Transporte</span>
                       </button>
                     )}
 
@@ -923,7 +914,7 @@ export default function NotasPage() {
                       )}
 
                       {/* Excluir Nota */}
-                      {inv.status !== "AUTORIZADA" && (
+                      {(inv.tipo === "ENTRADA" || inv.status !== "AUTORIZADA") && (
                         <button
                           onClick={() => setSelectedInvoiceForDelete(inv)}
                           title="Excluir Nota"
@@ -1007,11 +998,10 @@ export default function NotasPage() {
                       <td className="py-3 px-3.5">
                         <div className="flex items-center gap-2">
                           <div
-                            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                              inv.tipo === "ENTRADA"
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${inv.tipo === "ENTRADA"
                                 ? "bg-blue-50 text-blue-600"
                                 : "bg-emerald-50 text-emerald-600"
-                            }`}
+                              }`}
                           >
                             {inv.tipo === "ENTRADA" ? (
                               <ArrowDownLeft className="w-4 h-4" />
@@ -1088,15 +1078,14 @@ export default function NotasPage() {
 
                       <td className="py-3 px-3.5 whitespace-nowrap">
                         <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                            inv.status === "AUTORIZADA"
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${inv.status === "AUTORIZADA"
                               ? "bg-emerald-50 text-emerald-700"
                               : inv.status === "PENDENTE"
-                              ? "bg-amber-50 text-amber-700"
-                              : inv.status === "CANCELADA"
-                              ? "bg-slate-100 text-slate-600"
-                              : "bg-red-50 text-red-700"
-                          }`}
+                                ? "bg-amber-50 text-amber-700"
+                                : inv.status === "CANCELADA"
+                                  ? "bg-slate-100 text-slate-600"
+                                  : "bg-red-50 text-red-700"
+                            }`}
                         >
                           {inv.status === "AUTORIZADA" && (
                             <CheckCircle2 className="w-3 h-3 text-emerald-500" />
@@ -1114,10 +1103,10 @@ export default function NotasPage() {
                             {inv.status === "AUTORIZADA"
                               ? "Autorizada"
                               : inv.status === "PENDENTE"
-                              ? "Processando"
-                              : inv.status === "CANCELADA"
-                              ? "Cancelada"
-                              : "Rejeitada"}
+                                ? "Processando"
+                                : inv.status === "CANCELADA"
+                                  ? "Cancelada"
+                                  : "Rejeitada"}
                           </span>
                         </span>
                       </td>
@@ -1128,22 +1117,22 @@ export default function NotasPage() {
                           {inv.tipo === "ENTRADA" && (() => {
                             const linkedRetorno = inv.chaveAcesso
                               ? invoices.find(
-                                  (s) =>
-                                    s.tipo === "SAIDA" &&
-                                    s.chaveNfeReferenciada === inv.chaveAcesso &&
-                                    (s.modalidadeEmissao === "RETORNO_MERCADORIA" || s.modalidadeEmissao === "CONJUNTA") &&
-                                    s.status !== "CANCELADA"
-                                )
+                                (s) =>
+                                  s.tipo === "SAIDA" &&
+                                  s.chaveNfeReferenciada === inv.chaveAcesso &&
+                                  (s.modalidadeEmissao === "RETORNO_MERCADORIA" || s.modalidadeEmissao === "CONJUNTA") &&
+                                  s.status !== "CANCELADA"
+                              )
                               : null;
 
                             const linkedCobranca = inv.chaveAcesso
                               ? invoices.find(
-                                  (s) =>
-                                    s.tipo === "SAIDA" &&
-                                    (s.chaveNfeReferenciada === inv.chaveAcesso || s.rawJson?.remessaOrigemId === inv.id) &&
-                                    (s.modalidadeEmissao === "COBRANCA_INDUSTRIALIZACAO" || s.modalidadeEmissao === "CONJUNTA") &&
-                                    s.status !== "CANCELADA"
-                                )
+                                (s) =>
+                                  s.tipo === "SAIDA" &&
+                                  (s.chaveNfeReferenciada === inv.chaveAcesso || s.rawJson?.remessaOrigemId === inv.id) &&
+                                  (s.modalidadeEmissao === "COBRANCA_INDUSTRIALIZACAO" || s.modalidadeEmissao === "CONJUNTA") &&
+                                  s.status !== "CANCELADA"
+                              )
                               : null;
 
                             if (linkedRetorno && linkedCobranca) {
@@ -1182,7 +1171,7 @@ export default function NotasPage() {
                                     title="Exportar Romaneio de Carga para Transporte"
                                     className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300 cursor-pointer shadow-2xs"
                                   >
-                                    🚚 Romaneio
+                                    Romaneio
                                   </button>
                                 </div>
                               );
@@ -1202,7 +1191,7 @@ export default function NotasPage() {
                                     title="Exportar Romaneio de Carga para Transporte"
                                     className="px-2 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold border border-amber-300 cursor-pointer shadow-2xs"
                                   >
-                                    🚚 Romaneio
+                                    Romaneio
                                   </button>
                                   <button
                                     onClick={() => {
@@ -1257,9 +1246,8 @@ export default function NotasPage() {
                                 className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-ink cursor-pointer disabled:opacity-50"
                               >
                                 <RefreshCw
-                                  className={`w-3.5 h-3.5 text-slate-600 ${
-                                    statusCheckingId === inv.id ? "animate-spin text-primary" : ""
-                                  }`}
+                                  className={`w-3.5 h-3.5 text-slate-600 ${statusCheckingId === inv.id ? "animate-spin text-primary" : ""
+                                    }`}
                                 />
                               </button>
 
@@ -1349,12 +1337,12 @@ export default function NotasPage() {
                               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 transition-colors font-bold text-[11px] border border-amber-300 cursor-pointer shadow-2xs"
                             >
                               <Truck className="w-3 h-3 text-amber-700" />
-                              <span>🚚 Exportar p/ Transporte</span>
+                              <span>Exportar p/ Transporte</span>
                             </button>
                           )}
 
                           {/* Excluir Nota */}
-                          {inv.status !== "AUTORIZADA" && (
+                          {(inv.tipo === "ENTRADA" || inv.status !== "AUTORIZADA") && (
                             <button
                               onClick={() => setSelectedInvoiceForDelete(inv)}
                               title="Excluir Nota"
