@@ -116,7 +116,7 @@ export function SendInvoiceEmailModal({
     }
   };
 
-  const senderDisplayName = tenantName || "Sua Oficina";
+  const senderDisplayName = tenantName || "Sua Confecção";
 
   return (
     <div
@@ -179,7 +179,7 @@ export function SendInvoiceEmailModal({
                   <span className="text-emerald-700 font-mono text-[11px]">&lt;notas@appnotafacil.online&gt;</span>
                 </p>
                 <p className="mt-1 text-[11px] text-emerald-800">
-                  As respostas da fábrica serão encaminhadas diretamente para o e-mail da sua oficina.
+                  As respostas da fábrica serão encaminhadas diretamente para o e-mail da sua confecção.
                 </p>
               </div>
             </div>

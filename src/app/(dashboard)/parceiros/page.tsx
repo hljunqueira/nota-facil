@@ -105,7 +105,7 @@ export default function ParceirosPage() {
             Fábricas Parceiras
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Confecções clientes que enviam remessas de corte para sua oficina de costura
+            Fábricas e marcas clientes que enviam remessas de corte para sua confecção
           </p>
         </div>
 

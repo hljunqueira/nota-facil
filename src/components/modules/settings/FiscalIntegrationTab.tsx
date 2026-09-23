@@ -165,10 +165,10 @@ export function FiscalIntegrationTab({ tenant, onSuccess }: FiscalIntegrationTab
           </div>
           <div>
             <h3 className="text-xs font-bold text-indigo-950">
-              Integração Exclusiva da Sua Oficina na Focus NFe
+              Integração Exclusiva da Sua Confecção na Focus NFe
             </h3>
             <p className="text-[11px] text-indigo-800 mt-0.5 leading-relaxed">
-              Cada oficina opera com seus próprios tokens e credenciais fiscais independentes. A emissão de NF-e e o cancelamento na SEFAZ são executados estritamente com as credenciais cadastradas abaixo.
+              Cada confecção opera com seus próprios tokens e credenciais fiscais independentes. A emissão de NF-e e o cancelamento na SEFAZ são executados estritamente com as credenciais cadastradas abaixo.
             </p>
           </div>
         </div>

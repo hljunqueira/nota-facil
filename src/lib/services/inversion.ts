@@ -6,6 +6,7 @@
 
 import { createTenantPrisma } from "@/lib/prisma";
 import { prismaAdmin } from "@/lib/prismaAdmin";
+import { extractNfeKeyFromText } from "./nfeKey";
 
 /**
  * Determina se um item de remessa é produto principal de vestuário/confecção
@@ -125,6 +126,7 @@ export interface InversionPreparationResult {
   totalInsumosRetorno: number;
   quantidadeTotalPecas: number;
   cfopMap: Record<string, string>;
+  transporte?: any;
 }
 
 export async function prepareInvoiceInversion(
@@ -225,6 +227,7 @@ export async function prepareInvoiceInversion(
       totalInsumosRetorno: totalInsumos,
       quantidadeTotalPecas: totalPecasVestuario > 0 ? totalPecasVestuario : totalQtd,
       cfopMap,
+      transporte: rawData.transporte || undefined,
     },
   };
 }
@@ -337,6 +340,7 @@ export async function prepareBatchInvoiceInversion(
       quantidadeTotalPecas: totalPecasVestuario > 0 ? totalPecasVestuario : totalQtd,
       cfopMap,
       chavesReferenciadas,
+      transporte: rawFirst.transporte || undefined,
     },
   };
 }
@@ -355,6 +359,8 @@ export function buildFocusNfePayload({
   quantidadePecasServico,
   observacoesFiscais,
   emitenteInfo,
+  cfopRetornoOverride,
+  transporteInfo,
 }: {
   tenant: any;
   partner: any;
@@ -366,20 +372,43 @@ export function buildFocusNfePayload({
   quantidadePecasServico?: number;
   observacoesFiscais?: string;
   emitenteInfo?: any;
+  cfopRetornoOverride?: string;
+  transporteInfo?: {
+    modalidadeFrete?: string;
+    transportador?: {
+      razaoSocial?: string;
+      cnpj?: string;
+      inscricaoEstadual?: string;
+      endereco?: string;
+      municipio?: string;
+      uf?: string;
+      placa?: string;
+      ufVeiculo?: string;
+    };
+    volumes?: {
+      quantidade?: number;
+      especie?: string;
+      marca?: string;
+      numero?: string;
+      pesoBruto?: number;
+      pesoLiquido?: number;
+    };
+  };
 }) {
   const itemsPayload: any[] = [];
   let itemNum = 1;
 
-  // 1. Itens de Retorno de Insumo (CFOP 5902 / 6902)
+  // 1. Itens de Retorno de Insumo (CFOP 5902 / 5904 / 6902)
   for (const item of itensRetorno) {
     const desc = item.descricao.length > 120 ? item.descricao.substring(0, 120).trim() : item.descricao;
+    const finalCfop = cfopRetornoOverride ? cfopRetornoOverride.replace(/\D/g, "") : item.cfopSaida;
 
     itemsPayload.push({
       numero_item: itemNum++,
       codigo_produto: item.codigo,
       descricao: desc,
       codigo_ncm: item.ncm.replace(/\D/g, ""),
-      cfop: item.cfopSaida,
+      cfop: finalCfop,
       unidade_comercial: item.unidade,
       quantidade_comercial: item.quantidade,
       valor_unitario_comercial: item.valorUnitario,
@@ -421,16 +450,32 @@ export function buildFocusNfePayload({
     });
   }
 
-  // Monta lista de chaves referenciadas
+  // Monta lista de chaves referenciadas garantindo 44 dígitos
   const rawChaves = chavesAcessoEntrada && chavesAcessoEntrada.length > 0
     ? chavesAcessoEntrada
     : [chaveAcessoEntrada];
 
   const cleanChaves = rawChaves
-    .map((c) => c.replace(/\D/g, ""))
+    .map((c) => {
+      let digits = (c || "").replace(/\D/g, "");
+      if (digits.length === 45 && digits.startsWith("1")) {
+        digits = digits.substring(1);
+      } else if (digits.length > 44) {
+        const extracted = extractNfeKeyFromText(c);
+        if (extracted) digits = extracted;
+      }
+      return digits;
+    })
     .filter((c) => c.length === 44);
 
   const notasRefPayload = cleanChaves.map((chave_nfe) => ({ chave_nfe }));
+
+  // Fallback seguro caso a lista esteja vazia
+  const rawFallback = (chaveAcessoEntrada || "").replace(/\D/g, "");
+  const safeFallback = rawFallback.length === 45 && rawFallback.startsWith("1")
+    ? rawFallback.substring(1)
+    : rawFallback;
+  const finalRefKey = cleanChaves.length > 0 ? cleanChaves[0] : safeFallback;
 
   const infAdic = `Retorno de mercadoria recebida para industrializacao ref. NF-e Chave(s): ${cleanChaves.join(", ")}. Nao incidencia de ICMS conf. legislacao estadual. Prestacao de servico tributada pelo Simples Nacional conf. LC 123/2006 (Anexo II - Industria). ${
     observacoesFiscais ? observacoesFiscais.trim() : ""
@@ -442,11 +487,46 @@ export function buildFocusNfePayload({
     emitenteInfo?.inscricaoEstadual ||
     (cleanPartnerCnpj === "72305295000115" ? "252740106" : undefined);
 
+  // Configuração de Transporte & Volumes
+  const modalidadeFrete = transporteInfo?.modalidadeFrete !== undefined && transporteInfo?.modalidadeFrete !== null
+    ? String(transporteInfo.modalidadeFrete)
+    : "0"; // 0 = Por conta do Emitente / Remetente
+
+  const transp = transporteInfo?.transportador;
+  const vols = transporteInfo?.volumes;
+
+  const transportPayload: any = {
+    modalidade_frete: modalidadeFrete,
+  };
+
+  if (transp) {
+    if (transp.razaoSocial) transportPayload.nome_transportador = transp.razaoSocial.substring(0, 60);
+    if (transp.cnpj) transportPayload.cnpj_transportador = transp.cnpj.replace(/\D/g, "");
+    if (transp.inscricaoEstadual) transportPayload.inscricao_estadual_transportador = transp.inscricaoEstadual.replace(/\D/g, "");
+    if (transp.endereco) transportPayload.endereco_transportador = transp.endereco.substring(0, 60);
+    if (transp.municipio) transportPayload.municipio_transportador = transp.municipio.substring(0, 60);
+    if (transp.uf) transportPayload.uf_transportador = transp.uf.substring(0, 2).toUpperCase();
+    if (transp.placa) transportPayload.veiculo_placa = transp.placa.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+    if (transp.ufVeiculo) transportPayload.veiculo_uf = transp.ufVeiculo.substring(0, 2).toUpperCase();
+  }
+
+  if (vols) {
+    if (vols.quantidade) transportPayload.quantidade_volumes = Number(vols.quantidade);
+    if (vols.especie) transportPayload.especie_volumes = String(vols.especie).substring(0, 60);
+    if (vols.marca) transportPayload.marca_volumes = String(vols.marca).substring(0, 60);
+    if (vols.numero) transportPayload.numero_volumes = String(vols.numero).substring(0, 60);
+    if (vols.pesoBruto) transportPayload.peso_bruto_volumes = Number(vols.pesoBruto);
+    if (vols.pesoLiquido) transportPayload.peso_liquido_volumes = Number(vols.pesoLiquido);
+  }
+
+  const naturezaOperacao = cfopRetornoOverride === "5904" || cfopRetornoOverride === "6904"
+    ? "Remessa para industrializacao por conta e ordem"
+    : "Retorno de mercadoria por encomenda";
+
   return {
-    natureza_operacao: "Retorno de mercadoria por encomenda",
+    natureza_operacao: naturezaOperacao,
     tipo_documento: 1, // 1 = Saída
     finalidade_emissao: 1, // 1 = Normal
-    modalidade_frete: "9", // 9 = Sem Ocorrência de Transporte
     numero: tenant.proximoNumero || undefined,
     serie: tenant.serieNfe ? String(tenant.serieNfe) : "1",
     cnpj_emitente: tenant.cnpj.replace(/\D/g, ""),
@@ -465,8 +545,10 @@ export function buildFocusNfePayload({
     cep_destinatario: (partner.cep || emitenteInfo?.cep || "88960000").replace(/\D/g, ""),
     telefone_destinatario: (partner.telefone || emitenteInfo?.telefone || "4835336300").replace(/\D/g, ""),
 
-    // Documentos Referenciados (Obrigatório SEFAZ)
-    notas_referenciadas: notasRefPayload.length > 0 ? notasRefPayload : [{ chave_nfe: chaveAcessoEntrada.replace(/\D/g, "") }],
+    // Documentos Referenciados (Obrigatório SEFAZ - 44 dígitos)
+    notas_referenciadas: notasRefPayload.length > 0 ? notasRefPayload : [{ chave_nfe: finalRefKey }],
+
+    ...transportPayload,
 
     itens: itemsPayload,
     informacoes_adicionais_contribuinte: infAdic,
@@ -507,7 +589,10 @@ export function buildFocusNfeCobrancaPayload({
   const cleanPartnerCnpj = (partner.cnpj || "").replace(/\D/g, "");
   const ieDest = partner.inscricaoEstadual?.trim().toUpperCase() ||
     (cleanPartnerCnpj === "72305295000115" ? "252740106" : undefined);
-  const cleanChaveRef = (chaveReferenciada || "").replace(/\D/g, "");
+  const rawChaveRef = (chaveReferenciada || "").replace(/\D/g, "");
+  const cleanChaveRef = rawChaveRef.length === 45 && rawChaveRef.startsWith("1")
+    ? rawChaveRef.substring(1)
+    : (rawChaveRef.length > 44 ? (extractNfeKeyFromText(chaveReferenciada || "") || rawChaveRef) : rawChaveRef);
 
   let itemNum = 1;
   const itemsPayload: any[] = [];

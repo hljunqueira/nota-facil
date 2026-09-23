@@ -14,6 +14,28 @@ export interface ParsedNfeItem {
   valorTotal: number;
 }
 
+export interface ParsedTransporte {
+  modalidadeFrete?: string; // "0" | "1" | "2" | "3" | "4" | "9"
+  transportador?: {
+    razaoSocial?: string;
+    cnpj?: string;
+    inscricaoEstadual?: string;
+    endereco?: string;
+    municipio?: string;
+    uf?: string;
+    placa?: string;
+    ufVeiculo?: string;
+  };
+  volumes?: {
+    quantidade?: number;
+    especie?: string;
+    marca?: string;
+    numero?: string;
+    pesoBruto?: number;
+    pesoLiquido?: number;
+  };
+}
+
 export interface ParsedNfe {
   chaveAcesso: string;
   numero: number;
@@ -40,6 +62,7 @@ export interface ParsedNfe {
     inscricaoEstadual?: string;
   };
   itens: ParsedNfeItem[];
+  transporte?: ParsedTransporte;
 }
 
 function extractTag(xml: string, tag: string): string {
@@ -124,6 +147,54 @@ export function parseNfeXml(xmlContent: string): ParsedNfe {
     });
   }
 
+  // 7. Transporte & Volumes (<transp>)
+  const transpBlock = extractTag(xmlContent, "transp");
+  let transporte: ParsedTransporte | undefined = undefined;
+  if (transpBlock) {
+    const modFrete = extractTag(transpBlock, "modFrete") || "0";
+    const transpData = extractTag(transpBlock, "transporta");
+    const transpVeic = extractTag(transpBlock, "veicTransp");
+    const volData = extractTag(transpBlock, "vol");
+
+    const transpNome = extractTag(transpData, "xNome");
+    const transpCnpj = extractTag(transpData, "CNPJ") || extractTag(transpData, "CPF");
+    const transpIe = extractTag(transpData, "IE");
+    const transpEnd = extractTag(transpData, "xEnder");
+    const transpMun = extractTag(transpData, "xMun");
+    const transpUf = extractTag(transpData, "UF");
+    const transpPlaca = extractTag(transpVeic, "placa");
+    const transpPlacaUf = extractTag(transpVeic, "UF");
+
+    const qVol = extractTag(volData, "qVol");
+    const esp = extractTag(volData, "esp");
+    const marca = extractTag(volData, "marca");
+    const nVol = extractTag(volData, "nVol");
+    const pesoB = extractTag(volData, "pesoB");
+    const pesoL = extractTag(volData, "pesoL");
+
+    transporte = {
+      modalidadeFrete: modFrete,
+      transportador: transpNome || transpCnpj ? {
+        razaoSocial: transpNome,
+        cnpj: transpCnpj,
+        inscricaoEstadual: transpIe,
+        endereco: transpEnd,
+        municipio: transpMun,
+        uf: transpUf,
+        placa: transpPlaca,
+        ufVeiculo: transpPlacaUf,
+      } : undefined,
+      volumes: qVol || pesoB || pesoL ? {
+        quantidade: qVol ? parseInt(qVol, 10) : undefined,
+        especie: esp || "VOLUMES",
+        marca,
+        numero: nVol,
+        pesoBruto: pesoB ? parseFloat(pesoB) : undefined,
+        pesoLiquido: pesoL ? parseFloat(pesoL) : undefined,
+      } : undefined,
+    };
+  }
+
   return {
     chaveAcesso,
     numero,
@@ -148,5 +219,6 @@ export function parseNfeXml(xmlContent: string): ParsedNfe {
       razaoSocial: destRazao,
     },
     itens,
+    transporte,
   };
 }

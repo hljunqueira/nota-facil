@@ -124,6 +124,7 @@ export interface DashboardMetrics {
   // Informações da Empresa / Certificado
   tenantInfo: {
     razaoSocial: string;
+    nomeFantasia?: string | null;
     cnpj: string;
     ambiente: string;
     certificadoValidoAte: Date | null;
@@ -236,6 +237,7 @@ export async function getDashboardDataAction(
     where: { id: tenantId },
     select: {
       razaoSocial: true,
+      nomeFantasia: true,
       cnpj: true,
       ambiente: true,
       certificadoValidoAte: true,
@@ -666,7 +668,8 @@ export async function getDashboardDataAction(
       pdfUrl: n.pdfUrl,
     })),
     tenantInfo: {
-      razaoSocial: tenant?.razaoSocial || "Oficina de Costura",
+      razaoSocial: tenant?.razaoSocial || tenant?.nomeFantasia || "Confecção",
+      nomeFantasia: tenant?.nomeFantasia || null,
       cnpj: tenant?.cnpj || "",
       ambiente: tenant?.ambiente || "HOMOLOGACAO",
       certificadoValidoAte: tenant?.certificadoValidoAte || null,

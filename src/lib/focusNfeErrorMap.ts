@@ -26,16 +26,16 @@ const KNOWN_FISCAL_ERRORS: KnownErrorPattern[] = [
     padroes: ["539", "204", /duplicidade de nf-e/i, /duplicidade/i],
     titulo: "Número de Nota Fiscal Já Utilizado",
     descricao:
-      "A SEFAZ rejeitou a emissão porque o número e a série desta nota já foram emitidos anteriormente por outra NF-e autorizada da sua oficina.",
+      "A SEFAZ rejeitou a emissão porque o número e a série desta nota já foram emitidos anteriormente por outra NF-e autorizada da sua confecção.",
     comoResolver:
-      "Acesse 'Configurações' no menu lateral e aumente o 'Próximo Número da NF-e'. Em seguida, repita a inversão.",
+      "Acesse 'Configurações' no menu lateral e aumente o 'Próximo Número da NF-e'. Em seguida, repita a emissão.",
     gravidade: "ERRO",
   },
   {
     padroes: ["232", /ie do destinatario/i, /inscricao estadual.*destinatario/i],
     titulo: "Inscrição Estadual da Fábrica Incorreta",
     descricao:
-      "A Inscrição Estadual (IE) cadastrada para a confecção parceira não está ativa ou não confere com o CNPJ no cadastro da SEFAZ do estado de destino.",
+      "A Inscrição Estadual (IE) cadastrada para a fábrica parceira não está ativa ou não confere com o CNPJ no cadastro da SEFAZ do estado de destino.",
     comoResolver:
       "Consulte o Sintegra ou o Cadastro Centralizado (CCC) da fábrica parceira e atualize a Inscrição Estadual no cadastro de parceiros.",
     gravidade: "ERRO",
@@ -44,7 +44,7 @@ const KNOWN_FISCAL_ERRORS: KnownErrorPattern[] = [
     padroes: ["280", "281", "284", "285", "286", /certificado transmissor/i, /certificado.*expirado/i, /certificado.*revogado/i],
     titulo: "Certificado Digital A1 com Problemas",
     descricao:
-      "O Certificado Digital A1 da sua oficina está expirado, foi revogado ou a senha informada não confere na validação com a SEFAZ.",
+      "O Certificado Digital A1 da sua confecção está expirado, foi revogado ou a senha informada não confere na validação com a SEFAZ.",
     comoResolver:
       "Solicite ao administrador da plataforma para reenviar o arquivo .pfx e a senha atualizada do seu certificado A1.",
     gravidade: "ERRO",
@@ -60,7 +60,7 @@ const KNOWN_FISCAL_ERRORS: KnownErrorPattern[] = [
   },
   {
     padroes: ["208", /usuario nao tem permissao/i, /empresa nao habilitada/i],
-    titulo: "Oficina Não Credenciada para Emissão na SEFAZ",
+    titulo: "Confecção Não Credenciada para Emissão na SEFAZ",
     descricao:
       "A Secretaria da Fazenda do seu estado ainda não autorizou o seu CNPJ para emitir Notas Fiscais Eletrônicas em ambiente de produção.",
     comoResolver:
@@ -73,7 +73,7 @@ const KNOWN_FISCAL_ERRORS: KnownErrorPattern[] = [
     descricao:
       "O Código de Situação Tributária (CST/CSOSN) gerado não é aceito pela SEFAZ para esta combinação de remessa e retorno industrial.",
     comoResolver:
-      "Revise as 'Regras de CFOP' nas Configurações da oficina ou consulte sua contabilidade para confirmar a tributação do Simples Nacional.",
+      "Revise as 'Regras de CFOP' nas Configurações da confecção ou consulte sua contabilidade para confirmar a tributação do Simples Nacional.",
     gravidade: "ERRO",
   },
   {
@@ -82,7 +82,7 @@ const KNOWN_FISCAL_ERRORS: KnownErrorPattern[] = [
     descricao:
       "A soma das peças e serviços diverge do valor total final da nota fiscal por alguns centavos de arredondamento.",
     comoResolver:
-      "Revise o espelho de conferência e retransmita a inversão para que o sistema recalcule os centavos automaticamente.",
+      "Revise o espelho de conferência e retransmita a nota para que o sistema recalcule os centavos automaticamente.",
     gravidade: "AVISO",
   },
   {
@@ -98,9 +98,9 @@ const KNOWN_FISCAL_ERRORS: KnownErrorPattern[] = [
     padroes: [/empresa_sem_certificado/i, /sem certificado/i],
     titulo: "Certificado Digital Não Configurado",
     descricao:
-      "Sua oficina ainda não possui um Certificado Digital A1 ativo conectado ao sistema fiscal.",
+      "Sua confecção ainda não possui um Certificado Digital A1 ativo conectado ao sistema fiscal.",
     comoResolver:
-      "Acesse as configurações ou contate o suporte administrativo para realizar o upload do certificado A1 da sua oficina.",
+      "Acesse as configurações ou contate o suporte administrativo para realizar o upload do certificado A1 da sua confecção.",
     gravidade: "ERRO",
   },
 ];

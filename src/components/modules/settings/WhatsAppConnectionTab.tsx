@@ -135,7 +135,7 @@ export function WhatsAppConnectionTab({ tenantPhone }: WhatsAppConnectionTabProp
   };
 
   const handleDisconnect = async () => {
-    if (!confirm("Deseja realmente desconectar o WhatsApp da sua oficina?")) return;
+    if (!confirm("Deseja realmente desconectar o WhatsApp da sua confecção?")) return;
 
     setDisconnecting(true);
     setErrorMessage(null);

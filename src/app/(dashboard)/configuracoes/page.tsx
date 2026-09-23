@@ -407,7 +407,7 @@ function ConfiguracoesContent() {
                   type="text"
                   value={companyForm.nomeFantasia}
                   onChange={(e) => setCompanyForm({ ...companyForm, nomeFantasia: e.target.value })}
-                  placeholder="Nome comercial da sua oficina"
+                  placeholder="Nome comercial da sua confecção"
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-ink focus:bg-white focus:border-primary transition-all"
                 />
               </div>

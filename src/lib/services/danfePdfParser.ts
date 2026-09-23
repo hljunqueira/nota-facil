@@ -1,5 +1,6 @@
-import { ParsedNfe, ParsedNfeItem } from "./xmlParser";
+import { ParsedNfe, ParsedNfeItem, ParsedTransporte } from "./xmlParser";
 import { extractTextFromPdfBuffer } from "./pdfTextExtractor";
+import { extractNfeKeyFromText } from "./nfeKey";
 
 export async function parseDanfePdf(
   pdfBuffer: Buffer,
@@ -20,15 +21,13 @@ export async function parseDanfePdf(
     throw new Error("O arquivo PDF fornecido está vazio ou não contém texto legível (imagem digitalizada).");
   }
 
-  // 1. Chave de Acesso (44 dígitos numéricos)
-  const cleanNoSpaces = text.replace(/[\s\t\r\n]+/g, "");
-  const chaveMatch = cleanNoSpaces.match(/\d{44}/);
-  if (!chaveMatch) {
+  // 1. Chave de Acesso (44 dígitos numéricos validados via Módulo 11 SEFAZ)
+  const chaveAcesso = extractNfeKeyFromText(text);
+  if (!chaveAcesso || chaveAcesso.length !== 44) {
     throw new Error(
       "Não foi possível localizar a Chave de Acesso de 44 dígitos no DANFE. Verifique se o documento é uma NF-e válida."
     );
   }
-  const chaveAcesso = chaveMatch[0];
 
   // 2. Extrai Número e Série da NF-e
   // Tenta pelo texto ou extrai com 100% de precisão das posições oficiais da Chave de Acesso SEFAZ
@@ -191,6 +190,101 @@ export async function parseDanfePdf(
     }
   }
 
+  // 9. Extração de Transporte e Volumes
+  let transporte: ParsedTransporte | undefined = undefined;
+  const lines = text.split(/\r?\n/);
+  const tIdx = lines.findIndex(
+    (l) => l.includes("TRANSPORTADOR/VOLUMES") || l.includes("TRANSPORTADOR")
+  );
+
+  let modalidadeFrete = "0";
+  let transpNome: string | undefined = undefined;
+  let transpCnpj: string | undefined = undefined;
+  let transpIe: string | undefined = undefined;
+  let transpEnd: string | undefined = undefined;
+  let transpMun: string | undefined = undefined;
+  let transpUf: string | undefined = undefined;
+  let transpPlaca: string | undefined = undefined;
+
+  let qtdVolumes: number | undefined = undefined;
+  let especieVolumes: string | undefined = undefined;
+  let pesoBruto: number | undefined = undefined;
+  let pesoLiquido: number | undefined = undefined;
+
+  if (tIdx !== -1) {
+    const chunkLines = lines.slice(
+      Math.max(0, tIdx - 8),
+      Math.min(lines.length, tIdx + 8)
+    );
+
+    for (const line of chunkLines) {
+      const freteM = line.match(
+        /([0-9])\s*-\s*(?:EMITENTE|DESTINAT[AÁ]RIO|TERCEIROS|SEM\s+FRETE|REMETENTE|PR[OÓ]PRIO)/i
+      );
+      if (freteM) modalidadeFrete = freteM[1];
+
+      // Linha do nome e CNPJ da transportadora
+      const nomeCnpjM = line.match(
+        /^\s*([A-Z0-9\s\.\-]{3,60})\s+(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i
+      );
+      if (
+        nomeCnpjM &&
+        !nomeCnpjM[1].includes("NOME") &&
+        !nomeCnpjM[1].includes("ENDEREÇO")
+      ) {
+        transpNome = nomeCnpjM[1].trim();
+        transpCnpj = nomeCnpjM[2].replace(/\D/g, "");
+      }
+
+      // Linha do endereço, município, UF e IE da transportadora
+      const endM = line.match(
+        /^\s*([A-Z0-9\s\.\-\,]{5,50})\s+([A-Z\s]{3,30})\s+(SC|SP|PR|RS|MG|RJ|GO|BA|CE|PE)\s+(\d{7,14})/i
+      );
+      if (endM && !endM[1].includes("QUANTIDADE") && !endM[1].includes("DADOS")) {
+        transpEnd = endM[1].trim();
+        transpMun = endM[2].trim();
+        transpUf = endM[3].trim();
+        transpIe = endM[4].trim();
+      }
+
+      // Linha de volumes
+      const volM = line.match(
+        /(\d+)\s+([A-Z]{2,10})\s+[\s\S]*?([\d\.]+,\d{2,3})\s+([\d\.]+,\d{2,3})/
+      );
+      if (volM) {
+        qtdVolumes = parseInt(volM[1], 10);
+        especieVolumes = volM[2].trim();
+        pesoBruto = parseFloat(volM[3].replace(/\./g, "").replace(",", "."));
+        pesoLiquido = parseFloat(volM[4].replace(/\./g, "").replace(",", "."));
+      }
+    }
+
+    transporte = {
+      modalidadeFrete,
+      transportador:
+        transpNome || transpCnpj
+          ? {
+              razaoSocial: transpNome,
+              cnpj: transpCnpj,
+              inscricaoEstadual: transpIe,
+              endereco: transpEnd,
+              municipio: transpMun,
+              uf: transpUf,
+              placa: transpPlaca,
+            }
+          : undefined,
+      volumes:
+        qtdVolumes || pesoBruto || pesoLiquido
+          ? {
+              quantidade: qtdVolumes,
+              especie: especieVolumes || "VOLUMES",
+              pesoBruto,
+              pesoLiquido,
+            }
+          : undefined,
+    };
+  }
+
   return {
     chaveAcesso,
     numero,
@@ -217,5 +311,6 @@ export async function parseDanfePdf(
       inscricaoEstadual: ieDestinatario,
     },
     itens,
+    transporte,
   };
 }

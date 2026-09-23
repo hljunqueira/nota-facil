@@ -28,21 +28,24 @@ import {
   Mail,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import {
   getDashboardDataAction,
   DashboardMetrics,
   PeriodoFiltro,
 } from "@/actions/dashboard";
-import { getInversionPreviewAction } from "@/actions/invoices";
+import { getInversionPreviewAction, syncPendingInvoicesAction } from "@/actions/invoices";
 import { InversionPreviewDialog } from "@/components/modules/invoices/InversionPreviewDialog";
 import { ImportXmlModal } from "@/components/modules/invoices/ImportXmlModal";
 import { ImportEspelhoModal } from "@/components/modules/invoices/ImportEspelhoModal";
 import { MonthlyCloseModal } from "@/components/modules/invoices/MonthlyCloseModal";
 import { SendInvoiceEmailModal } from "@/components/modules/invoices/SendInvoiceEmailModal";
+import { RomaneioModal } from "@/components/modules/invoices/RomaneioModal";
 import { InversionPreparationResult } from "@/lib/services/inversion";
 import { WhatsAppIcon } from "@/components/ui/WhatsAppIcon";
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [data, setData] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,6 +65,8 @@ export default function DashboardPage() {
   const [showMonthlyCloseModal, setShowMonthlyCloseModal] = useState(false);
   const [selectedInvoiceForEmail, setSelectedInvoiceForEmail] = useState<any | null>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [selectedInvoiceForRomaneio, setSelectedInvoiceForRomaneio] = useState<any | null>(null);
+  const [showRomaneioModal, setShowRomaneioModal] = useState(false);
   const [inversionData, setInversionData] = useState<InversionPreparationResult | null>(null);
   const [inversionLoadingId, setInversionLoadingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -84,6 +89,9 @@ export default function DashboardPage() {
     else setLoading(true);
 
     try {
+      if (isRefresh) {
+        await syncPendingInvoicesAction();
+      }
       const res = await getDashboardDataAction({
         periodo,
         dataInicio: dtStart,
@@ -135,6 +143,19 @@ export default function DashboardPage() {
       alert(err.message || "Erro ao preparar espelho de inversão.");
     } finally {
       setInversionLoadingId(null);
+    }
+  };
+
+  const handleExportTransporteClick = () => {
+    const ultimaSaida = data?.ultimasNotas?.find(
+      (n: any) => n.tipo === "SAIDA" && n.status === "AUTORIZADA"
+    );
+
+    if (ultimaSaida) {
+      setSelectedInvoiceForRomaneio(ultimaSaida);
+      setShowRomaneioModal(true);
+    } else {
+      router.push("/notas?tab=SAIDA");
     }
   };
 
@@ -211,15 +232,15 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Top Banner / Welcome & Quick Actions */}
+      {/* Top Banner / Welcome & Identificação da Confecção */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-white p-4 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-primary uppercase tracking-wider mb-1">
-            Visão Geral
+            Visão Geral da Confecção
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-ink">
-              {data?.tenantInfo?.razaoSocial || "Painel da Facção"}
+              {data?.tenantInfo?.nomeFantasia || data?.tenantInfo?.razaoSocial || "Minha Confecção"}
             </h1>
             <span
               className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${certStatus.color}`}
@@ -230,7 +251,7 @@ export default function DashboardPage() {
             <button
               onClick={() => loadData(true)}
               title="Atualizar dados"
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <RefreshCw
                 className={`w-4 h-4 ${refreshing ? "animate-spin text-primary" : ""}`}
@@ -238,34 +259,97 @@ export default function DashboardPage() {
             </button>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Gestão de faturamento de costura, retorno de matéria-prima e previsão de recebimentos
+            Gestão simplificada de remessas de corte, retorno de insumos (5904/5902) e faturamento de costura (5124)
           </p>
         </div>
 
-        {/* Botões de Ação Direta - Área tátil confortável para mobile */}
-        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-          <Link
-            href="/notas"
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-primary hover:bg-primaryDark text-white text-xs sm:text-sm font-semibold shadow-xs transition-all cursor-pointer flex-1 sm:flex-initial"
-          >
-            <RefreshCw className="w-4 h-4 text-white shrink-0" />
-            <span>Gerar NF de Retorno</span>
-          </Link>
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm font-semibold transition-all cursor-pointer flex-1 sm:flex-initial"
-          >
-            <Upload className="w-4 h-4 text-slate-500 shrink-0" />
-            <span>Importar Nota</span>
-          </button>
+        {/* Ação de Fechamento Contábil */}
+        <div className="flex items-center gap-2 w-full lg:w-auto">
           <button
             onClick={() => setShowMonthlyCloseModal(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-900 hover:bg-black text-white text-xs sm:text-sm font-semibold transition-all cursor-pointer shadow-xs w-full sm:w-auto"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm font-semibold transition-all cursor-pointer w-full sm:w-auto"
           >
-            <Send className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>Contador</span>
+            <Send className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Enviar ao Contador</span>
           </button>
         </div>
+      </div>
+
+      {/* Bloco de Ações Rápidas de Chão de Fábrica - 3 Passos Claros */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+        {/* Passo 1: Chegou Tecido da Fábrica */}
+        <button
+          type="button"
+          onClick={() => setShowImportModal(true)}
+          className="p-4 rounded-2xl bg-blue-50/80 hover:bg-blue-100/70 border border-blue-200/80 text-left flex items-start gap-3.5 transition-all shadow-xs hover:shadow-md cursor-pointer group min-h-[80px]"
+        >
+          <div className="p-2.5 rounded-xl bg-blue-600 text-white shadow-xs shrink-0 group-hover:scale-105 transition-transform mt-0.5">
+            <Upload className="w-5 h-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[11px] font-bold text-blue-950 uppercase tracking-wider">
+                1. Chegou Tecido
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-200/80 text-blue-900 shrink-0">
+                Remessa 5901
+              </span>
+            </div>
+            <p className="text-sm font-bold text-ink mt-0.5">Importar Nota da Fábrica</p>
+            <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+              Suba os PDFs do WhatsApp para dar entrada e liberar o retorno dos insumos
+            </p>
+          </div>
+        </button>
+
+        {/* Passo 2: Fábrica Mandou Espelho */}
+        <Link
+          href="/notas?tab=ENTRADA"
+          className="p-4 rounded-2xl bg-emerald-50/80 hover:bg-emerald-100/70 border border-emerald-200/80 text-left flex items-start gap-3.5 transition-all shadow-xs hover:shadow-md cursor-pointer group min-h-[80px]"
+        >
+          <div className="p-2.5 rounded-xl bg-emerald-600 text-white shadow-xs shrink-0 group-hover:scale-105 transition-transform mt-0.5">
+            <FileText className="w-5 h-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[11px] font-bold text-emerald-950 uppercase tracking-wider">
+                2. Mandou Espelho
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-900 shrink-0">
+                CFOP 5124
+              </span>
+            </div>
+            <p className="text-sm font-bold text-ink mt-0.5">Faturar Mão de Obra</p>
+            <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+              Emita a cobrança da costura com as peças e valores aprovados no espelho
+            </p>
+          </div>
+        </Link>
+
+        {/* Passo 3: Exportar para Transporte */}
+        <button
+          type="button"
+          onClick={handleExportTransporteClick}
+          className="p-4 rounded-2xl bg-slate-900 hover:bg-black border border-slate-800 text-left flex items-start gap-3.5 transition-all shadow-xs hover:shadow-md cursor-pointer group min-h-[80px]"
+        >
+          <div className="p-2.5 rounded-xl bg-emerald-400 text-slate-950 shadow-xs shrink-0 group-hover:scale-105 transition-transform mt-0.5">
+            <Truck className="w-5 h-5" />
+          </div>
+          <div className="min-w-0 flex-1 text-white">
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">
+                3. Transporte
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 shrink-0">
+                Romaneio
+              </span>
+            </div>
+            <p className="text-sm font-bold text-white mt-0.5">Exportar para Transporte</p>
+            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+              Imprima o romaneio e canhoto com volumes e frete para acompanhar a carga
+            </p>
+          </div>
+        </button>
       </div>
 
       {/* Barra de Filtros Temporais */}
@@ -1242,6 +1326,17 @@ export default function DashboardPage() {
         }}
         onSuccess={(msg) => {
           setToastMessage(msg);
+        }}
+      />
+
+      {/* Modal de Romaneio / Exportar para Transporte */}
+      <RomaneioModal
+        isOpen={showRomaneioModal}
+        invoice={selectedInvoiceForRomaneio}
+        tenantInfo={data?.tenantInfo as any}
+        onClose={() => {
+          setShowRomaneioModal(false);
+          setSelectedInvoiceForRomaneio(null);
         }}
       />
     </div>

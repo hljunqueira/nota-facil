@@ -208,7 +208,7 @@ export function FiscalReadinessChecklist({ tenant }: FiscalReadinessChecklistPro
         <div className="text-xs text-blue-900 space-y-1">
           <span className="font-bold">Aviso Contábil Importante:</span>
           <p className="text-blue-800 leading-relaxed">
-            Ao final de cada mês, utilize a aba <strong>Enviar ao Contador</strong> para exportar o pacote ZIP oficial. O relatório CSV gerado pelo Nota Fácil já inclui a segregação detalhada entre base de cálculo tributável e trânsito não tributável de insumos, protegendo sua oficina contra cobrança indevida de DAS.
+            Ao final de cada mês, utilize a aba <strong>Enviar ao Contador</strong> para exportar o pacote ZIP oficial. O relatório CSV gerado pelo Nota Fácil já inclui a segregação detalhada entre base de cálculo tributável e trânsito não tributável de insumos, protegendo sua confecção contra cobrança indevida de DAS.
           </p>
         </div>
       </div>

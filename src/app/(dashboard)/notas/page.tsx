@@ -32,6 +32,7 @@ import {
   getInversionPreviewAction,
   getBatchInversionPreviewAction,
   checkInvoiceStatusAction,
+  syncPendingInvoicesAction,
   deleteInvoiceAction,
 } from "@/actions/invoices";
 import { InversionPreviewDialog } from "@/components/modules/invoices/InversionPreviewDialog";
@@ -93,11 +94,19 @@ export default function NotasPage() {
   // Importação
   const [showImportModal, setShowImportModal] = useState(false);
 
-  const loadInvoices = async (isSilent = false) => {
+  const loadInvoices = async (isSilent = false, syncSefaz = false) => {
     if (!isSilent) setLoading(true);
     else setIsRefreshing(true);
 
     try {
+      // Sincroniza qualquer nota pendente diretamente com a SEFAZ se solicitado
+      if (syncSefaz) {
+        const syncRes = await syncPendingInvoicesAction();
+        if (syncRes.updatedCount > 0) {
+          setToastMessage(`${syncRes.updatedCount} nota(s) atualizada(s) com sucesso na SEFAZ!`);
+        }
+      }
+
       // Busca todas as notas para permitir filtragem e abas instantâneas em memória
       const data = await getInvoicesAction();
       setInvoices(data);
@@ -110,19 +119,19 @@ export default function NotasPage() {
     }
   };
 
-  // Carregamento inicial
+  // Carregamento inicial: busca notas e sincroniza qualquer pendência na SEFAZ
   useEffect(() => {
-    loadInvoices();
+    loadInvoices(false, true);
   }, []);
 
   // Polling / Auto-refresh inteligente:
-  // Se houver alguma nota PENDENTE, faz polling a cada 8s. Caso contrário, a cada 25s.
+  // Se houver alguma nota PENDENTE, faz polling e consulta a SEFAZ a cada 8s. Caso contrário, a cada 25s.
   useEffect(() => {
     const hasPending = invoices.some((i) => i.status === "PENDENTE");
     const intervalMs = hasPending ? 8000 : 25000;
 
     const interval = setInterval(() => {
-      loadInvoices(true);
+      loadInvoices(true, hasPending);
     }, intervalMs);
 
     return () => clearInterval(interval);
@@ -306,6 +315,25 @@ export default function NotasPage() {
     }
   };
 
+  const handleExportTransporteClick = () => {
+    // Busca a nota de saída autorizada mais recente para romaneio imediato
+    const lastSaida = invoices.find(
+      (inv) => inv.tipo === "SAIDA" && inv.status === "AUTORIZADA"
+    );
+    if (lastSaida) {
+      setSelectedInvoiceForRomaneio(lastSaida);
+      setShowRomaneioModal(true);
+    } else {
+      const anySaida = invoices.find((inv) => inv.tipo === "SAIDA");
+      if (anySaida) {
+        setSelectedInvoiceForRomaneio(anySaida);
+        setShowRomaneioModal(true);
+      } else {
+        alert("Nenhuma nota de retorno ou cobrança emitida para gerar romaneio de carga.");
+      }
+    }
+  };
+
   return (
     <div className="space-y-4 sm:space-y-6 max-w-full overflow-x-hidden">
       {/* Header Principal Responsivo */}
@@ -321,11 +349,19 @@ export default function NotasPage() {
             </div>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Receba notas de remessa da fábrica e gere o retorno fiscal em 1 clique
+            Fluxo contábil da confecção: 1. Devolver tecido (5904/5902) e 2. Faturar costura com espelho (5124)
           </p>
         </div>
 
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto shrink-0">
+          <button
+            onClick={handleExportTransporteClick}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs sm:text-xs font-black shadow-xs transition-all cursor-pointer min-h-[44px] sm:min-h-0"
+            title="Exportar Romaneio de Carga para Transporte e Despacho"
+          >
+            <Truck className="w-4 h-4 text-slate-950 shrink-0" />
+            <span className="whitespace-nowrap">🚚 Exportar p/ Transporte</span>
+          </button>
           <Link
             href="/configuracoes?tab=fechamento"
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs sm:text-xs font-bold transition-all cursor-pointer shadow-xs min-h-[44px] sm:min-h-0"
@@ -338,7 +374,7 @@ export default function NotasPage() {
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary hover:bg-primaryDark text-white text-xs sm:text-xs font-bold shadow-xs transition-all cursor-pointer min-h-[44px] sm:min-h-0"
           >
             <Upload className="w-4 h-4 shrink-0" />
-            <span className="whitespace-nowrap">Importar Nota da Fábrica</span>
+            <span className="whitespace-nowrap">Importar Remessa (5901)</span>
           </button>
         </div>
       </div>
@@ -450,9 +486,9 @@ export default function NotasPage() {
               Atualizado {lastSync.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
             </span>
             <button
-              onClick={() => loadInvoices(false)}
+              onClick={() => loadInvoices(false, true)}
               disabled={loading || isRefreshing}
-              title="Atualizar agora"
+              title="Atualizar e sincronizar notas pendentes com a SEFAZ"
               className="p-2.5 sm:p-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 transition-all cursor-pointer disabled:opacity-50 min-h-[38px]"
             >
               <RefreshCw
@@ -687,21 +723,50 @@ export default function NotasPage() {
 
                   {/* Linha 3: Ações de Produção / Lote */}
                   {inv.tipo === "ENTRADA" && (
-                    <div className="pt-2 border-t border-slate-100 space-y-2">
+                    <div className="pt-2 border-t border-slate-100 space-y-2.5">
+                      {/* Mini Indicador de Etapas */}
+                      <div className="flex items-center justify-between text-[10px] font-bold py-1 px-2.5 rounded-lg bg-slate-50 border border-slate-200/70 text-slate-600">
+                        <span className="text-blue-700 font-extrabold">1. Tecido Recebido ✓</span>
+                        <span className="text-slate-300">➔</span>
+                        <span className={linkedRetorno ? "text-emerald-700 font-extrabold" : "text-amber-700 font-black animate-pulse"}>
+                          2. Devolver Tecido {linkedRetorno ? "✓" : "⏳"}
+                        </span>
+                        <span className="text-slate-300">➔</span>
+                        <span className={linkedCobranca ? "text-emerald-700 font-extrabold" : linkedRetorno ? "text-amber-700 font-black animate-pulse" : "text-slate-400"}>
+                          3. Faturar Costura {linkedCobranca ? "✓" : linkedRetorno ? "⏳" : ""}
+                        </span>
+                      </div>
+
                       {linkedRetorno && linkedCobranca ? (
-                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-700">Lote Concluído</span>
-                          <div className="flex items-center gap-2">
+                        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-emerald-900 flex items-center gap-1.5">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                              Lote 100% Concluído
+                            </span>
+                            <button
+                              onClick={() => {
+                                setSelectedInvoiceForRomaneio(linkedRetorno || linkedCobranca);
+                                setShowRomaneioModal(true);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-900 font-bold text-[11px] shadow-2xs hover:bg-emerald-100/60 cursor-pointer min-h-[36px]"
+                            >
+                              <Truck className="w-3.5 h-3.5 text-emerald-700" />
+                              <span>🚚 Romaneio</span>
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2 pt-1 border-t border-emerald-200/60 text-xs">
                             {linkedRetorno.pdfUrl && (
                               <a
                                 href={linkedRetorno.pdfUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-primary font-semibold hover:underline"
+                                className="text-blue-700 font-semibold hover:underline"
                               >
                                 Retorno #{linkedRetorno.numero}
                               </a>
                             )}
+                            <span className="text-emerald-300">•</span>
                             {linkedCobranca.pdfUrl && (
                               <a
                                 href={linkedCobranca.pdfUrl}
@@ -715,16 +780,34 @@ export default function NotasPage() {
                           </div>
                         </div>
                       ) : linkedRetorno && !linkedCobranca ? (
-                        <button
-                          onClick={() => {
-                            setSelectedInvoiceForEspelho(inv);
-                            setShowEspelhoModal(true);
-                          }}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-sm shadow-xs transition-all cursor-pointer min-h-[46px]"
-                        >
-                          <FileText className="w-4 h-4" />
-                          <span>Faturar Costura (5124)</span>
-                        </button>
+                        <div className="space-y-2">
+                          <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200/80 flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-1.5 text-blue-900 font-semibold">
+                              <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+                              <span>Passo 1 OK (Retorno #{linkedRetorno.numero})</span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setSelectedInvoiceForRomaneio(linkedRetorno);
+                                setShowRomaneioModal(true);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-blue-200 text-blue-800 font-bold text-[11px] hover:bg-blue-100 cursor-pointer"
+                            >
+                              <Truck className="w-3.5 h-3.5 text-blue-600" />
+                              <span>🚚 Romaneio</span>
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setSelectedInvoiceForEspelho(inv);
+                              setShowEspelhoModal(true);
+                            }}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-xs transition-all cursor-pointer min-h-[46px]"
+                          >
+                            <FileText className="w-4 h-4" />
+                            <span>Passo 2: Faturar Costura com Espelho (5124)</span>
+                          </button>
+                        </div>
                       ) : (
                         <div className="flex flex-col gap-2">
                           <button
@@ -735,18 +818,18 @@ export default function NotasPage() {
                             {inversionLoadingId === inv.id ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
-                              <RefreshCw className="w-4 h-4" />
+                              <RefreshCw className="w-4 h-4 text-emerald-400" />
                             )}
-                            <span>Retorno de Mercadoria (5902)</span>
+                            <span>Passo 1: Emitir Retorno do Tecido (5904 / 5902)</span>
                           </button>
                           <button
                             onClick={() => {
                               setSelectedInvoiceForEspelho(inv);
                               setShowEspelhoModal(true);
                             }}
-                            className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-colors cursor-pointer min-h-[42px]"
+                            className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer min-h-[42px] flex items-center justify-center gap-1.5"
                           >
-                            Faturar Costura Direto (5124)
+                            <span>Passo 2: Faturar Costura Direto com Espelho (5124)</span>
                           </button>
                         </div>
                       )}
@@ -783,10 +866,10 @@ export default function NotasPage() {
                           setSelectedInvoiceForRomaneio(inv);
                           setShowRomaneioModal(true);
                         }}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs border border-slate-200 min-h-[44px] cursor-pointer"
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-300 min-h-[44px] cursor-pointer shadow-2xs"
                       >
-                        <Truck className="w-4 h-4 text-slate-600" />
-                        <span>Romaneio</span>
+                        <Truck className="w-4 h-4 text-amber-700" />
+                        <span>🚚 Exportar Transporte</span>
                       </button>
                     )}
 
@@ -1066,8 +1149,8 @@ export default function NotasPage() {
                             if (linkedRetorno && linkedCobranca) {
                               return (
                                 <div className="flex items-center gap-1.5">
-                                  <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-semibold border border-slate-200">
-                                    Lote Concluído
+                                  <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                    ✓ Lote Concluído
                                   </span>
                                   {linkedRetorno.pdfUrl && (
                                     <a
@@ -1091,6 +1174,16 @@ export default function NotasPage() {
                                       Cobrança #{linkedCobranca.numero}
                                     </a>
                                   )}
+                                  <button
+                                    onClick={() => {
+                                      setSelectedInvoiceForRomaneio(linkedRetorno || linkedCobranca);
+                                      setShowRomaneioModal(true);
+                                    }}
+                                    title="Exportar Romaneio de Carga para Transporte"
+                                    className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300 cursor-pointer shadow-2xs"
+                                  >
+                                    🚚 Romaneio
+                                  </button>
                                 </div>
                               );
                             }
@@ -1098,18 +1191,28 @@ export default function NotasPage() {
                             if (linkedRetorno && !linkedCobranca) {
                               return (
                                 <div className="flex items-center gap-2">
-                                  <span className="text-[10px] font-medium text-slate-500">
-                                    Retorno #{linkedRetorno.numero}
+                                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
+                                    ✓ Retorno #{linkedRetorno.numero}
                                   </span>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedInvoiceForRomaneio(linkedRetorno);
+                                      setShowRomaneioModal(true);
+                                    }}
+                                    title="Exportar Romaneio de Carga para Transporte"
+                                    className="px-2 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold border border-amber-300 cursor-pointer shadow-2xs"
+                                  >
+                                    🚚 Romaneio
+                                  </button>
                                   <button
                                     onClick={() => {
                                       setSelectedInvoiceForEspelho(inv);
                                       setShowEspelhoModal(true);
                                     }}
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white font-semibold text-xs transition-all cursor-pointer shadow-xs"
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-all cursor-pointer shadow-xs"
                                   >
                                     <FileText className="w-3.5 h-3.5" />
-                                    <span>Faturar (5124)</span>
+                                    <span>Passo 2: Faturar (5124)</span>
                                   </button>
                                 </div>
                               );
@@ -1121,13 +1224,14 @@ export default function NotasPage() {
                                   onClick={() => handleStartInversion(inv.id)}
                                   disabled={inversionLoadingId === inv.id}
                                   className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white font-semibold text-xs shadow-xs transition-all cursor-pointer disabled:opacity-60"
+                                  title="Devolver o tecido à fábrica copiando peso, volumes e frete"
                                 >
                                   {inversionLoadingId === inv.id ? (
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                   ) : (
-                                    <RefreshCw className="w-3.5 h-3.5" />
+                                    <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
                                   )}
-                                  <span>Retorno (5902)</span>
+                                  <span>Passo 1: Retorno (5904/5902)</span>
                                 </button>
                                 <button
                                   onClick={() => {
@@ -1135,9 +1239,9 @@ export default function NotasPage() {
                                     setShowEspelhoModal(true);
                                   }}
                                   title="Faturar a costura com o espelho da fábrica"
-                                  className="px-2 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+                                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
                                 >
-                                  Faturar (5124)
+                                  Passo 2: Faturar (5124)
                                 </button>
                               </div>
                             );
@@ -1241,11 +1345,11 @@ export default function NotasPage() {
                                 setSelectedInvoiceForRomaneio(inv);
                                 setShowRomaneioModal(true);
                               }}
-                              title="Imprimir Romaneio de Despacho"
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 transition-colors font-semibold text-[11px] border border-slate-200 cursor-pointer"
+                              title="Exportar Romaneio de Carga para Transporte e Despacho"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 transition-colors font-bold text-[11px] border border-amber-300 cursor-pointer shadow-2xs"
                             >
-                              <Truck className="w-3 h-3 text-slate-600" />
-                              <span>Romaneio</span>
+                              <Truck className="w-3 h-3 text-amber-700" />
+                              <span>🚚 Exportar p/ Transporte</span>
                             </button>
                           )}
 
@@ -1342,7 +1446,9 @@ export default function NotasPage() {
         onSuccess={(newInvoiceId) => {
           setToastMessage("Nota fiscal importada com sucesso!");
           loadInvoices(true);
-          handleStartInversion(newInvoiceId);
+          if (newInvoiceId) {
+            handleStartInversion(newInvoiceId);
+          }
         }}
       />
 

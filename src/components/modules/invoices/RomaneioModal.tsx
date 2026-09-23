@@ -34,16 +34,46 @@ export function RomaneioModal({
   invoice,
   tenantInfo,
 }: RomaneioModalProps) {
+  const raw = (invoice?.rawJson as any) || {};
+  const payload = raw.payloadEnviado || {};
+  const transp = raw.transporte || {};
+
   const [motorista, setMotorista] = useState("");
   const [placa, setPlaca] = useState("");
   const [quantidadeVolumes, setQuantidadeVolumes] = useState(1);
   const [tipoVolume, setTipoVolume] = useState("Caixas");
   const [observacoesEntrega, setObservacoesEntrega] = useState("");
 
+  React.useEffect(() => {
+    if (invoice) {
+      const initialMotorista =
+        payload.nome_transportador ||
+        transp.transportador?.razaoSocial ||
+        "";
+      const initialPlaca =
+        payload.veiculo_placa ||
+        transp.transportador?.placa ||
+        "";
+      const initialQtd =
+        payload.quantidade_volumes ||
+        transp.volumes?.quantidade ||
+        1;
+      const initialEspecie =
+        payload.especie_volumes ||
+        transp.volumes?.especie ||
+        "Caixas";
+
+      setMotorista(initialMotorista);
+      setPlaca(initialPlaca);
+      setQuantidadeVolumes(Number(initialQtd) || 1);
+      setTipoVolume(initialEspecie || "Caixas");
+      setObservacoesEntrega("");
+    }
+  }, [invoice]);
+
   if (!isOpen || !invoice) return null;
 
   // Extrai itens da nota
-  const raw = (invoice.rawJson as any) || {};
   const itens =
     raw.itens ||
     raw.payloadEnviado?.itens ||
@@ -58,7 +88,7 @@ export function RomaneioModal({
     tenantInfo?.nomeFantasia ||
     tenantInfo?.razaoSocial ||
     tenantInfo?.tenantName ||
-    "Oficina de Costura";
+    "Confecção";
 
   const handlePrint = () => {
     window.print();
@@ -76,10 +106,10 @@ export function RomaneioModal({
             </div>
             <div>
               <h2 className="text-sm font-bold text-ink">
-                Romaneio de Entrega Física — NF-e Nº {invoice.numero}
+                Exportar para Transporte — Romaneio NF-e Nº {invoice.numero}
               </h2>
               <p className="text-xs text-slate-500">
-                Folha de conferência de carga e canhoto para assinatura no recebimento
+                Folha de conferência de carga e canhoto para acompanhamento do frete
               </p>
             </div>
           </div>
@@ -89,7 +119,7 @@ export function RomaneioModal({
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primaryDark text-white text-xs font-bold shadow-xs cursor-pointer transition-all"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Imprimir Romaneio</span>
+              <span>Imprimir / Salvar PDF</span>
             </button>
             <button
               onClick={onClose}
@@ -191,7 +221,7 @@ export function RomaneioModal({
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 space-y-1">
               <span className="text-[10px] uppercase font-bold text-slate-500 block">
-                Oficina de Costura (Remetente)
+                Confecção Remetente
               </span>
               <p className="font-bold text-slate-900 text-sm">{emitenteNome}</p>
               <p className="text-slate-600">CNPJ: {tenantInfo?.cnpj || "-"}</p>
@@ -219,7 +249,7 @@ export function RomaneioModal({
           <div className="grid grid-cols-3 gap-3 text-xs border border-slate-200 p-3 rounded-xl bg-slate-50/30">
             <div>
               <span className="text-[10px] text-slate-500 font-semibold block">Motorista:</span>
-              <strong className="text-slate-900">{motorista || "Próprio / Da Oficina"}</strong>
+              <strong className="text-slate-900">{motorista || "Transporte Próprio da Confecção"}</strong>
             </div>
             <div>
               <span className="text-[10px] text-slate-500 font-semibold block">Veículo / Placa:</span>
@@ -319,7 +349,7 @@ export function RomaneioModal({
                 <p className="text-xs font-bold text-slate-900">
                   {emitenteNome}
                 </p>
-                <p className="text-[10px] text-slate-500">Assinatura do Expedidor / Oficina</p>
+                <p className="text-[10px] text-slate-500">Assinatura do Expedidor / Confecção</p>
               </div>
 
               <div className="text-center space-y-1">
