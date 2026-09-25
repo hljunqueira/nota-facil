@@ -124,71 +124,153 @@ export async function parseDanfePdf(
     ieDestinatario = destIeMatch[1].trim();
   }
 
-  // 7. Extração dos Itens da NF-e
-  // Normaliza quebras de linha comuns em DANFEs
-  let normalizedText = text;
-  normalizedText = normalizedText.replace(/UN\s*\n\s*ID/g, "UN");
-  normalizedText = normalizedText.replace(/PC\s*\n\s*ID/g, "PC");
-  normalizedText = normalizedText.replace(/CN\s*\n\s*ID/g, "CN");
-  normalizedText = normalizedText.replace(/(5901\s+[A-Z]{1,4})\s*\n\s*([\d\.,]+)/g, "$1 $2");
-
-  // Regex robusta e flexível para capturar a linha de produto do DANFE:
-  // [Código] [Descrição] [NCM 8 dig] [CST 3 dig] [CFOP 4 dig] [UN opcional] [Qtd] [Vl Unit] [Vl Total]
-  const itemRegex = /(?:^|\n)([A-Z0-9\-\.\/]{3,30})\s+([A-Z0-9\s\-\.\/\:\,]+?)\s+(\d{8})\s+(\d{3})\s+(\d{4})\s+(?:([A-Z]{1,4})\s+)?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)/gm;
-
+  // 7. Extração dos Itens da NF-e com ordenação física por página
   const itens: ParsedNfeItem[] = [];
-  let itemMatch;
+  const pages = text.split(/----------------Page Break----------------/i);
 
-  while ((itemMatch = itemRegex.exec(normalizedText)) !== null) {
-    let codigo = itemMatch[1].trim();
-    let descricao = itemMatch[2].trim().replace(/\s+/g, " ");
-    const ncm = itemMatch[3].trim();
-    const cfop = itemMatch[5].trim();
-    let unidade = itemMatch[6] ? itemMatch[6].trim().toUpperCase() : "UN";
-    const quantidade = parseFloat(itemMatch[7].replace(/\./g, "").replace(",", "."));
-    const valorUnitario = parseFloat(itemMatch[8].replace(/\./g, "").replace(",", "."));
-    const valorTotal = parseFloat(itemMatch[9].replace(/\./g, "").replace(",", "."));
+  for (const page of pages) {
+    const lines = page.split("\n").map((l) => l.trim()).filter(Boolean);
 
-    // Higieniza código e descrição removendo sujeiras de cabeçalho ou delimitadores da página
-    codigo = codigo.replace(/^(?:DADOS\s+ADICIONAIS|DADOS\s+DOS\s+PRODUTOS|DADOS)\s*(?:ID)?\s*/i, "").trim();
-    descricao = descricao.replace(/^(?:DADOS\s+ADICIONAIS|DADOS\s+DOS\s+PRODUTOS|DADOS)\s*(?:ID)?\s*/i, "").trim();
-    if (descricao.includes("DADOS DO PRODUTO")) {
-      descricao = descricao.split("DADOS DO PRODUTO").pop()?.trim() || descricao;
+    let inProductSection = false;
+    let pendingDescLines: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Identifica o início da seção de produtos nesta página
+      if (!inProductSection) {
+        if (
+          line.includes("DADOS DOS PRODUTOS") ||
+          (line.includes("CÓDIGO") && line.includes("DESCRIÇÃO") && line.includes("NCM"))
+        ) {
+          inProductSection = true;
+        }
+        continue;
+      }
+
+      // Identifica o fim da seção de produtos desta página
+      if (
+        line.startsWith("DADOS ADICIONAIS") ||
+        line.startsWith("INFORMAÇÕES COMPLEMENTARES") ||
+        line.startsWith("CÁLCULO DO ISSQN") ||
+        line.startsWith("TRANSPORTADOR/VOLUMES") ||
+        line.startsWith("CÁLCULO DO IMPOSTO")
+      ) {
+        break;
+      }
+
+      // Ignora repetições de cabeçalhos de coluna
+      if (
+        line.includes("DADOS DOS PRODUTOS") ||
+        line.includes("CÓDIGO PRODUTO") ||
+        line.includes("DESCRIÇÃO DO PRODUTO") ||
+        line.includes("NCM/SH CST CFOP") ||
+        line.includes("CÓDIGO ORIG VALOR")
+      ) {
+        continue;
+      }
+
+      // Linha de item fiscal com NCM (8 dígitos) e CFOP (5901, 5902, 5904, 6901, etc.)
+      const ncmCfopMatch = line.match(/\b(\d{8})\s+(\d{3})\s+([56]\d{3})\b/);
+
+      if (ncmCfopMatch) {
+        const matchIndex = ncmCfopMatch.index || 0;
+        const ncm = ncmCfopMatch[1];
+        const cfop = ncmCfopMatch[3];
+
+        const afterCfop = line.substring(matchIndex + ncmCfopMatch[0].length);
+        const valuesMatch = afterCfop.match(
+          /([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)(?:\s+0,00|\s*$)/
+        );
+
+        if (valuesMatch) {
+          const quantidade = parseFloat(valuesMatch[1].replace(/\./g, "").replace(",", "."));
+          const valorUnitario = parseFloat(valuesMatch[2].replace(/\./g, "").replace(",", "."));
+          const valorTotal = parseFloat(valuesMatch[3].replace(/\./g, "").replace(",", "."));
+
+          let unidade = "UN";
+          const unMatch = line.match(/\b(UN|PC|CN|M|MT|KG|RL|PÇA)\b/i);
+          if (unMatch) {
+            unidade = unMatch[1].toUpperCase();
+          }
+
+          const prefixOnLine = line.substring(0, matchIndex).trim();
+          const middleText = afterCfop.substring(0, valuesMatch.index || 0).trim();
+
+          let rawCombinedText = [...pendingDescLines, prefixOnLine, middleText]
+            .filter(Boolean)
+            .join(" ")
+            .replace(/\bID\b/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+
+          pendingDescLines = [];
+
+          let codigo = "";
+          let descricao = rawCombinedText;
+
+          // Se começa com código (ex: "CSV272552X", "20017", "22698")
+          const startCode = rawCombinedText.match(/^([A-Z0-9\-\.\/]{3,20})\b/i);
+          if (startCode && !startCode[1].match(/^(COR|TAM|UN|PC|CN|JDS|M|MT|FIO|LINHA|ZIPER|ETIQUETA)$/i)) {
+            codigo = startCode[1];
+            descricao = rawCombinedText.substring(codigo.length).trim();
+          } else {
+            const isolatedCode = rawCombinedText.match(/\b([0-9]{5,7}|[A-Z0-9]{8,15})\b/);
+            if (isolatedCode && !isolatedCode[1].match(/^(PADRAO|BRIGHT|WHITE|NOVO|SANCRIS)$/i)) {
+              codigo = isolatedCode[1];
+              descricao = rawCombinedText.replace(codigo, "").replace(/\s+/g, " ").trim();
+            }
+          }
+
+          // Limpeza de texto: remove repetições de tamanho/cor no início
+          descricao = descricao
+            .replace(/^(?:TAM:\s*PADRAO\s*|TAM:\s*\d+\s*)/i, "")
+            .replace(/^(?:COR:\s*[^,]+,\s*)?/i, "")
+            .replace(/\s+/g, " ")
+            .trim();
+
+          if (codigo && descricao.endsWith(codigo)) {
+            descricao = descricao.substring(0, descricao.length - codigo.length).trim();
+          }
+
+          itens.push({
+            numeroItem: itens.length + 1,
+            codigo: codigo || `ITEM-${itens.length + 1}`,
+            descricao: descricao || `Produto ${codigo}`,
+            ncm,
+            cfop,
+            unidade,
+            quantidade,
+            valorUnitario,
+            valorTotal,
+          });
+          continue;
+        }
+      }
+
+      // Linha descritiva adicional pertencente ao próximo item
+      pendingDescLines.push(line);
     }
-
-    // Se unidade veio como "ID" (resíduo de coluna interna de layout), normaliza para UN
-    if (unidade === "ID" || !unidade) {
-      unidade = "UN";
-    }
-
-    itens.push({
-      numeroItem: itens.length + 1,
-      codigo: codigo || `ITEM-${itens.length + 1}`,
-      descricao: descricao || `Item ${codigo}`,
-      ncm,
-      cfop,
-      unidade,
-      quantidade,
-      valorUnitario,
-      valorTotal,
-    });
   }
 
   // 8. Valor Total da Nota
-  let valorTotal = 0;
-  const valorRodapeMatch = text.match(/VALOR TOTAL DA NOTA[\s\S]*?([\d\.]+,\d{2})/i) ||
-    text.match(/VALOR TOTAL DOS PRODUTOS[\s\S]*?([\d\.]+,\d{2})/i);
-  if (valorRodapeMatch) {
-    valorTotal = parseFloat(valorRodapeMatch[1].replace(/\./g, "").replace(",", "."));
-  }
-
-  // Se a soma dos itens for maior (evita capturar subtotais intermediários de folhas 1/2) ou se valor for 0, usa a soma dos itens extraídos
   const somaItens = itens.reduce((acc, it) => acc + (it.valorTotal || 0), 0);
-  if (valorTotal === 0 || somaItens > valorTotal || Math.abs(valorTotal - somaItens) > 0.05) {
-    if (somaItens > 0) {
-      valorTotal = parseFloat(somaItens.toFixed(2));
+  let valorTotal = somaItens > 0 ? parseFloat(somaItens.toFixed(2)) : 0;
+
+  const valorRodapeMatch =
+    text.match(/VALOR TOTAL DA NOTA[\s\S]*?([\d\.]+,\d{2})/i) ||
+    text.match(/VALOR TOTAL DOS PRODUTOS[\s\S]*?([\d\.]+,\d{2})/i) ||
+    text.match(/VALOR TOTAL:\s*([\d\.]+,\d{2})/i);
+
+  if (valorRodapeMatch) {
+    const rodapeVal = parseFloat(valorRodapeMatch[1].replace(/\./g, "").replace(",", "."));
+    if (rodapeVal > 0 && Math.abs(rodapeVal - somaItens) <= 0.05) {
+      valorTotal = rodapeVal;
+    } else if (valorTotal === 0 && rodapeVal > 0) {
+      valorTotal = rodapeVal;
     }
   }
+
 
   // 9. Extração de Transporte e Volumes
   let transporte: ParsedTransporte | undefined = undefined;

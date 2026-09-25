@@ -17,8 +17,11 @@ import {
   ChevronDown,
   ChevronUp,
   Package,
+  Trash2,
+  RotateCcw,
 } from "lucide-react";
 import { executeInversionAction } from "@/actions/invoices";
+
 import { InversionPreparationResult, InvertedItem } from "@/lib/services/inversion";
 import { FiscalErrorAlert } from "@/components/ui/FiscalErrorAlert";
 
@@ -45,6 +48,9 @@ export function InversionPreviewDialog({
   const [transmitting, setTransmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Lista reativa de itens da nota de retorno (permite alteração de quantidade e remoção)
+  const [itensEditados, setItensEditados] = useState<InvertedItem[]>([]);
+
   // Dados de Transporte e Volumes espelhados da nota de entrada
   const [showTransporte, setShowTransporte] = useState(false);
   const [modalidadeFrete, setModalidadeFrete] = useState<string>("0");
@@ -67,6 +73,9 @@ export function InversionPreviewDialog({
       setValorPorPeca(0);
       setObservacoes("");
       setErrorMessage(null);
+
+      // Clona itens para permitir edição independente
+      setItensEditados(inversionData.itensRetorno.map((it) => ({ ...it })));
 
       // Sugestão de CFOP: Ritmi costuma solicitar 5904
       const partnerNome = (inversionData.notaEntrada.emitenteFabrica.nome || "").toUpperCase();
@@ -104,10 +113,51 @@ export function InversionPreviewDialog({
     }
   }, [inversionData, isOpen]);
 
+  // Funções de manipulação de itens da nota de retorno
+  const handleQuantityChange = (numeroItem: number, newQtd: number) => {
+    const originalItem = inversionData?.itensRetorno.find((it) => it.numeroItem === numeroItem);
+    const maxQtd = originalItem ? originalItem.quantidade : 999999;
+    const clampedQtd = Math.max(0, Math.min(newQtd, maxQtd));
+
+    setItensEditados((prev) =>
+      prev.map((item) => {
+        if (item.numeroItem === numeroItem) {
+          const valorTotal = parseFloat((clampedQtd * item.valorUnitario).toFixed(2));
+          return {
+            ...item,
+            quantidade: clampedQtd,
+            valorTotal,
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  const handleRemoveItem = (numeroItem: number) => {
+    setItensEditados((prev) => prev.filter((it) => it.numeroItem !== numeroItem));
+  };
+
+  const handleRestoreItems = () => {
+    if (inversionData) {
+      setItensEditados(inversionData.itensRetorno.map((it) => ({ ...it })));
+    }
+  };
+
+  const isItemsModified = React.useMemo(() => {
+    if (!inversionData) return false;
+    if (itensEditados.length !== inversionData.itensRetorno.length) return true;
+    return itensEditados.some((it) => {
+      const orig = inversionData.itensRetorno.find((o) => o.numeroItem === it.numeroItem);
+      return orig && orig.quantidade !== it.quantidade;
+    });
+  }, [itensEditados, inversionData]);
+
   if (!isOpen || !inversionData) return null;
 
-  const { notaEntrada, itensRetorno, totalInsumosRetorno } = inversionData;
+  const { notaEntrada } = inversionData;
 
+  const totalInsumosRetorno = itensEditados.reduce((acc, it) => acc + (it.valorTotal || 0), 0);
   const totalServico = cobrarServico ? (valorPorPeca || 0) * (qtdPecasServico || 1) : 0;
   const valorTotalNota = totalInsumosRetorno + totalServico;
 
@@ -119,6 +169,11 @@ export function InversionPreviewDialog({
   };
 
   const handleTransmit = async () => {
+    if (itensEditados.length === 0) {
+      setErrorMessage("A nota fiscal de retorno precisa ter pelo menos um item a ser devolvido.");
+      return;
+    }
+
     setTransmitting(true);
     setErrorMessage(null);
 
@@ -146,7 +201,7 @@ export function InversionPreviewDialog({
         invoiceEntradaId: notaEntrada.id,
         chaveAcessoEntrada: chavesRef && chavesRef.length > 0 ? chavesRef[0] : notaEntrada.chaveAcesso,
         chavesAcessoEntrada: chavesRef,
-        itensRetorno,
+        itensRetorno: itensEditados,
         cobrarServico,
         valorServicoPorPeca: cobrarServico ? valorPorPeca : undefined,
         quantidadePecasServico: cobrarServico ? qtdPecasServico : undefined,
@@ -168,6 +223,7 @@ export function InversionPreviewDialog({
       setTransmitting(false);
     }
   };
+
 
   const hasTransporteOriginal = Boolean(
     inversionData.transporte?.transportador?.razaoSocial ||
@@ -317,58 +373,139 @@ export function InversionPreviewDialog({
             </div>
           )}
 
-          {/* Tabela de Itens Convertidos */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-              Itens da Nota de Retorno a Emitir ({itensRetorno.length} itens)
-            </h3>
-            <div className="border border-slate-200 rounded-2xl overflow-hidden">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-50 text-[10px] font-bold uppercase text-slate-500 border-b border-slate-200">
-                  <tr>
-                    <th className="py-2.5 px-3">Item / Descrição</th>
-                    <th className="py-2.5 px-3">NCM</th>
-                    <th className="py-2.5 px-3">CFOP Gerado</th>
-                    <th className="py-2.5 px-3 text-right">Qtd</th>
-                    <th className="py-2.5 px-3 text-right">Valor Unit.</th>
-                    <th className="py-2.5 px-3 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {itensRetorno.map((item) => (
-                    <tr key={item.numeroItem} className="hover:bg-slate-50/50">
-                      <td className="py-2.5 px-3">
-                        <span className="font-semibold text-ink">{item.descricao}</span>
-                        <span className="text-[10px] text-slate-400 block font-mono">
-                          {item.codigo}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 font-mono text-slate-600">{item.ncm}</td>
-                      <td className="py-2.5 px-3 font-mono">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          cfopRetorno === "5904"
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-emerald-100 text-emerald-800"
-                        }`}>
-                          {displayCfop(item.cfopSaida)}
-                        </span>
-                        <span className="text-[10px] text-slate-400 block">
-                          Origem: {item.cfopEntradaOriginal}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-semibold text-slate-700">
-                        {item.quantidade} {item.unidade}
-                      </td>
-                      <td className="py-2.5 px-3 text-right text-slate-600">
-                        R$ {item.valorUnitario.toFixed(2)}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-bold text-ink">
-                        R$ {item.valorTotal.toFixed(2)}
-                      </td>
+          {/* Tabela de Itens Convertidos & Edição de Quantidades */}
+          <div className="space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Itens da Nota de Retorno ({itensEditados.length} de {inversionData.itensRetorno.length} itens)
+                </h3>
+                {isItemsModified && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                    Retorno Editado / Parcial
+                  </span>
+                )}
+              </div>
+              {isItemsModified && (
+                <button
+                  type="button"
+                  onClick={handleRestoreItems}
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 font-semibold px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer min-h-[36px]"
+                  title="Restaurar todos os itens e quantidades originais da remessa"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Restaurar itens originais</span>
+                </button>
+              )}
+            </div>
+
+            <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse table-fixed min-w-[700px]">
+                  <thead className="bg-slate-50 text-[10px] font-bold uppercase text-slate-500 border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3 w-[34%]">Item / Descrição</th>
+                      <th className="py-2.5 px-3 w-[12%]">NCM</th>
+                      <th className="py-2.5 px-3 w-[14%]">CFOP Gerado</th>
+                      <th className="py-2.5 px-3 text-right w-[16%]">Qtd a Retornar</th>
+                      <th className="py-2.5 px-3 text-right w-[10%]">Unit. (R$)</th>
+                      <th className="py-2.5 px-3 text-right w-[10%]">Total (R$)</th>
+                      <th className="py-2.5 px-2 text-center w-[4%]"></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {itensEditados.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-slate-400">
+                          <p className="font-semibold text-slate-600">Nenhum item restante para a nota de retorno.</p>
+                          <p className="text-[11px] mt-1">Todos os itens foram excluídos. Clique em &quot;Restaurar itens originais&quot; para reverter.</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      itensEditados.map((item) => {
+                        const original = inversionData.itensRetorno.find((orig) => orig.numeroItem === item.numeroItem);
+                        const maxQtd = original?.quantidade ?? item.quantidade;
+                        const isPartial = item.quantidade < maxQtd;
+
+                        return (
+                          <tr key={item.numeroItem} className="hover:bg-slate-50/70 transition-colors">
+                            <td className="py-2.5 px-3">
+                              <span className="font-semibold text-ink line-clamp-2" title={item.descricao}>
+                                {item.descricao}
+                              </span>
+                              <span className="text-[10px] text-slate-400 block font-mono">
+                                Cód: {item.codigo}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 font-mono text-slate-600 text-xs">
+                              {item.ncm}
+                            </td>
+                            <td className="py-2.5 px-3 font-mono">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  cfopRetorno === "5904"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : "bg-emerald-100 text-emerald-800"
+                                }`}
+                              >
+                                {displayCfop(item.cfopSaida)}
+                              </span>
+                              <span className="text-[10px] text-slate-400 block">
+                                Origem: {item.cfopEntradaOriginal}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
+                              <div className="inline-flex items-center justify-end gap-1.5">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={maxQtd}
+                                  step="any"
+                                  value={item.quantidade}
+                                  onChange={(e) => {
+                                    const val = parseFloat(e.target.value);
+                                    handleQuantityChange(item.numeroItem, isNaN(val) ? 0 : val);
+                                  }}
+                                  className={`w-20 px-2 py-1 text-right text-xs font-bold rounded-lg border focus:outline-none focus:ring-1 ${
+                                    isPartial
+                                      ? "border-amber-400 bg-amber-50 text-amber-950 focus:ring-amber-500"
+                                      : "border-slate-300 bg-white text-slate-800 focus:ring-primary"
+                                  }`}
+                                  title={`Quantidade máxima da remessa: ${maxQtd} ${item.unidade}`}
+                                />
+                                <span className="text-[11px] text-slate-500 font-semibold w-6 text-left">
+                                  {item.unidade}
+                                </span>
+                              </div>
+                              {isPartial && (
+                                <span className="text-[9px] text-amber-700 font-semibold block mt-0.5">
+                                  Orig: {maxQtd} {item.unidade}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-right text-slate-600 font-mono">
+                              {item.valorUnitario.toFixed(2)}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-bold text-ink font-mono">
+                              {item.valorTotal.toFixed(2)}
+                            </td>
+                            <td className="py-2.5 px-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(item.numeroItem)}
+                                className="w-8 h-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer min-h-[44px] min-w-[44px] -m-1"
+                                title="Remover item da nota de retorno"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -632,7 +769,7 @@ export function InversionPreviewDialog({
           <button
             type="button"
             onClick={handleTransmit}
-            disabled={transmitting}
+            disabled={transmitting || itensEditados.length === 0}
             className="px-6 py-2.5 rounded-xl bg-primary hover:bg-primaryDark text-white text-xs font-bold shadow-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-60 min-h-[44px]"
           >
             {transmitting ? (
