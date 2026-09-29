@@ -54,14 +54,19 @@ export function Navbar() {
           </div>
         </div>
 
-        {/* Botão Sair no Mobile (visível apenas em telas menores) */}
+        {/* Divisor vertical no desktop */}
+        <div className="h-6 w-px bg-slate-200 hidden sm:block" />
+
+        {/* Botão Sair da Conta (Mobile e Desktop) */}
         <button
           onClick={handleSignOut}
           disabled={signingOut}
           title="Sair da conta"
-          className="md:hidden p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+          type="button"
+          className="group flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-200 transition-all cursor-pointer shadow-2xs disabled:opacity-50 min-h-[38px]"
         >
-          <LogOut className="w-4 h-4" />
+          <LogOut className="w-4 h-4 text-slate-400 group-hover:text-rose-600 transition-colors shrink-0" />
+          <span className="hidden sm:inline">{signingOut ? "Saindo..." : "Sair"}</span>
         </button>
       </div>
     </header>

@@ -9,7 +9,6 @@ import {
   Building2,
   CreditCard,
   Settings,
-  LogOut,
 } from "lucide-react";
 
 const navigationItems = [
@@ -51,22 +50,11 @@ const mobileItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const [signingOut, setSigningOut] = React.useState(false);
-
-  const handleSignOut = () => {
-    if (signingOut) return;
-    setSigningOut(true);
-    try {
-      localStorage.clear();
-      sessionStorage.clear();
-    } catch (_) {}
-    window.location.href = "/api/auth/logout?redirect=/login?logged_out=true";
-  };
 
   return (
     <>
       {/* Sidebar para Desktop */}
-      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white sticky top-14 h-[calc(100vh-3.5rem)] p-3.5 justify-between select-none">
+      <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white sticky top-14 h-[calc(100vh-3.5rem)] p-3.5 select-none">
         <nav className="space-y-1.5" aria-label="Menu Principal">
           {navigationItems.map((item) => {
             const isActive =
@@ -94,18 +82,6 @@ export function Sidebar() {
             );
           })}
         </nav>
-
-        {/* Rodapé da Sidebar Desktop com Botão de Sair */}
-        <div className="pt-3 border-t border-slate-100">
-          <button
-            onClick={handleSignOut}
-            type="button"
-            className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl text-sm font-semibold text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-          >
-            <LogOut className="h-4.5 w-4.5 shrink-0 text-slate-400" />
-            <span>Sair da conta</span>
-          </button>
-        </div>
       </aside>
 
       {/* Barra Inferior Fixa para Mobile Ampliada (h-16 / 64px, touch-friendly para polegar) */}
