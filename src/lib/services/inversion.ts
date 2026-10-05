@@ -500,14 +500,48 @@ export function buildFocusNfePayload({
   };
 
   if (transp) {
-    if (transp.razaoSocial) transportPayload.nome_transportador = transp.razaoSocial.substring(0, 60);
-    if (transp.cnpj) transportPayload.cnpj_transportador = transp.cnpj.replace(/\D/g, "");
-    if (transp.inscricaoEstadual) transportPayload.inscricao_estadual_transportador = transp.inscricaoEstadual.replace(/\D/g, "");
-    if (transp.endereco) transportPayload.endereco_transportador = transp.endereco.substring(0, 60);
-    if (transp.municipio) transportPayload.municipio_transportador = transp.municipio.substring(0, 60);
-    if (transp.uf) transportPayload.uf_transportador = transp.uf.substring(0, 2).toUpperCase();
-    if (transp.placa) transportPayload.veiculo_placa = transp.placa.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-    if (transp.ufVeiculo) transportPayload.veiculo_uf = transp.ufVeiculo.substring(0, 2).toUpperCase();
+    let transpUf = transp.uf ? transp.uf.trim().substring(0, 2).toUpperCase() : undefined;
+    let transpMun = transp.municipio ? transp.municipio.trim().substring(0, 60) : undefined;
+    const cleanCarrierCnpj = (transp.cnpj || "").replace(/\D/g, "");
+
+    const isPartnerTransport =
+      (cleanCarrierCnpj && cleanCarrierCnpj === cleanPartnerCnpj) ||
+      (transp.razaoSocial && partner?.razaoSocial && transp.razaoSocial.toUpperCase().includes(partner.razaoSocial.toUpperCase())) ||
+      (transp.razaoSocial && transp.razaoSocial.toUpperCase().includes("RITMI")) ||
+      (cleanPartnerCnpj === "72305295000115" && (!cleanCarrierCnpj || cleanCarrierCnpj === "72305295000115"));
+
+    // Se o transportador for a própria fábrica parceira (ex: Ritmi) e a UF não foi informada
+    if (!transpUf && isPartnerTransport) {
+      transpUf = (partner.uf || emitenteInfo?.uf || "SC").substring(0, 2).toUpperCase();
+      if (!transpMun) {
+        transpMun = (partner.municipio || emitenteInfo?.municipio || "SOMBRIO").substring(0, 60);
+      }
+    }
+
+    const hasCarrierData = Boolean(transp.razaoSocial || transp.cnpj);
+
+    if (transpUf) {
+      if (transp.razaoSocial) transportPayload.nome_transportador = transp.razaoSocial.substring(0, 60);
+      if (transp.cnpj) transportPayload.cnpj_transportador = cleanCarrierCnpj;
+      if (transp.inscricaoEstadual) transportPayload.inscricao_estadual_transportador = transp.inscricaoEstadual.replace(/\D/g, "");
+      if (transp.endereco) transportPayload.endereco_transportador = transp.endereco.substring(0, 60);
+      if (transpMun) transportPayload.municipio_transportador = transpMun;
+      transportPayload.uf_transportador = transpUf;
+      if (transp.placa) transportPayload.veiculo_placa = transp.placa.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+      if (transp.ufVeiculo) transportPayload.veiculo_uf = transp.ufVeiculo.substring(0, 2).toUpperCase();
+    } else if (modalidadeFrete !== "4" && modalidadeFrete !== "9" && hasCarrierData) {
+      // Se não é transporte próprio/sem frete e o usuário informou transportadora sem UF,
+      // aplica fallback seguro da UF do parceiro ou emitente para evitar rejeição dura da SEFAZ
+      const fallbackUf = (partner?.uf || tenant?.uf || "SC").substring(0, 2).toUpperCase();
+      if (transp.razaoSocial) transportPayload.nome_transportador = transp.razaoSocial.substring(0, 60);
+      if (transp.cnpj) transportPayload.cnpj_transportador = cleanCarrierCnpj;
+      if (transp.inscricaoEstadual) transportPayload.inscricao_estadual_transportador = transp.inscricaoEstadual.replace(/\D/g, "");
+      if (transp.endereco) transportPayload.endereco_transportador = transp.endereco.substring(0, 60);
+      if (transpMun) transportPayload.municipio_transportador = transpMun;
+      transportPayload.uf_transportador = fallbackUf;
+      if (transp.placa) transportPayload.veiculo_placa = transp.placa.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+      if (transp.ufVeiculo) transportPayload.veiculo_uf = transp.ufVeiculo.substring(0, 2).toUpperCase();
+    }
   }
 
   if (vols) {

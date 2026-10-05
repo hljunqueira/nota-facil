@@ -103,6 +103,15 @@ const KNOWN_FISCAL_ERRORS: KnownErrorPattern[] = [
       "Acesse as configurações ou contate o suporte administrativo para realizar o upload do certificado A1 da sua confecção.",
     gravidade: "ERRO",
   },
+  {
+    padroes: ["698", /uf do transportador/i, /uf.*transportador.*nao informado/i],
+    titulo: "UF do Transportador Não Informada",
+    descricao:
+      "A SEFAZ exige a sigla do estado (UF) sempre que os dados de uma transportadora (nome ou CNPJ) forem informados na nota fiscal.",
+    comoResolver:
+      "Se o transporte for próprio da fábrica (ex: Ritmi), selecione a modalidade '4 - Transporte Próprio (Destinatário)' e deixe os dados da transportadora em branco, ou informe a UF da fábrica (SC).",
+    gravidade: "ERRO",
+  },
 ];
 
 /**

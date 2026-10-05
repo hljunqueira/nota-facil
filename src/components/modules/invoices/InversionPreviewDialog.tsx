@@ -57,6 +57,8 @@ export function InversionPreviewDialog({
   const [transportadorNome, setTransportadorNome] = useState("");
   const [transportadorCnpj, setTransportadorCnpj] = useState("");
   const [transportadorIe, setTransportadorIe] = useState("");
+  const [transportadorUf, setTransportadorUf] = useState("");
+  const [transportadorMunicipio, setTransportadorMunicipio] = useState("");
   const [placaVeiculo, setPlacaVeiculo] = useState("");
   const [ufVeiculo, setUfVeiculo] = useState("");
   const [qtdVolumes, setQtdVolumes] = useState<number | "">("");
@@ -79,7 +81,11 @@ export function InversionPreviewDialog({
 
       // Sugestão de CFOP: Ritmi costuma solicitar 5904
       const partnerNome = (inversionData.notaEntrada.emitenteFabrica.nome || "").toUpperCase();
-      if (partnerNome.includes("RITMI")) {
+      const isRitmi =
+        partnerNome.includes("RITMI") ||
+        (inversionData.notaEntrada.emitenteFabrica.cnpj || "").replace(/\D/g, "") === "72305295000115";
+
+      if (isRitmi) {
         setCfopRetorno("5904");
       } else {
         setCfopRetorno("5902");
@@ -88,10 +94,18 @@ export function InversionPreviewDialog({
       // Preenche dados de transporte a partir da nota de entrada
       const transp = inversionData.transporte;
       if (transp) {
-        setModalidadeFrete(transp.modalidadeFrete !== undefined ? String(transp.modalidadeFrete) : "0");
+        // Se a nota de entrada veio com modFrete 0 (CIF da fábrica), na devolução para a fábrica
+        // o transporte próprio da Ritmi é modFrete 4 (Transporte Próprio do Destinatário) ou FOB (1).
+        const defaultMod = isRitmi && (transp.modalidadeFrete === "0" || !transp.modalidadeFrete)
+          ? "4"
+          : (transp.modalidadeFrete !== undefined ? String(transp.modalidadeFrete) : "0");
+
+        setModalidadeFrete(defaultMod);
         setTransportadorNome(transp.transportador?.razaoSocial || "");
         setTransportadorCnpj(transp.transportador?.cnpj || "");
         setTransportadorIe(transp.transportador?.inscricaoEstadual || "");
+        setTransportadorUf(transp.transportador?.uf || (isRitmi ? "SC" : ""));
+        setTransportadorMunicipio(transp.transportador?.municipio || (isRitmi ? "SOMBRIO" : ""));
         setPlacaVeiculo(transp.transportador?.placa || "");
         setUfVeiculo(transp.transportador?.ufVeiculo || "");
         setQtdVolumes(transp.volumes?.quantidade ?? "");
@@ -99,10 +113,12 @@ export function InversionPreviewDialog({
         setPesoBruto(transp.volumes?.pesoBruto ?? "");
         setPesoLiquido(transp.volumes?.pesoLiquido ?? "");
       } else {
-        setModalidadeFrete("0");
+        setModalidadeFrete(isRitmi ? "4" : "0");
         setTransportadorNome("");
         setTransportadorCnpj("");
         setTransportadorIe("");
+        setTransportadorUf(isRitmi ? "SC" : "");
+        setTransportadorMunicipio(isRitmi ? "SOMBRIO" : "");
         setPlacaVeiculo("");
         setUfVeiculo("");
         setQtdVolumes("");
@@ -186,6 +202,8 @@ export function InversionPreviewDialog({
           razaoSocial: transportadorNome || undefined,
           cnpj: transportadorCnpj || undefined,
           inscricaoEstadual: transportadorIe || undefined,
+          uf: transportadorUf ? transportadorUf.trim().toUpperCase() : undefined,
+          municipio: transportadorMunicipio ? transportadorMunicipio.trim() : undefined,
           placa: placaVeiculo || undefined,
           ufVeiculo: ufVeiculo || undefined,
         } : undefined,
@@ -599,6 +617,88 @@ export function InversionPreviewDialog({
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono"
                     />
                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      UF do Transportador
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={2}
+                      value={transportadorUf}
+                      onChange={(e) => setTransportadorUf(e.target.value.toUpperCase())}
+                      placeholder="Ex: SC"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs uppercase font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Município do Transportador
+                    </label>
+                    <input
+                      type="text"
+                      value={transportadorMunicipio}
+                      onChange={(e) => setTransportadorMunicipio(e.target.value)}
+                      placeholder="Ex: SOMBRIO"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Placa do Veículo (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={8}
+                      value={placaVeiculo}
+                      onChange={(e) => setPlacaVeiculo(e.target.value.toUpperCase())}
+                      placeholder="Ex: ABC1D23"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs uppercase font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      UF do Veículo (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={2}
+                      value={ufVeiculo}
+                      onChange={(e) => setUfVeiculo(e.target.value.toUpperCase())}
+                      placeholder="Ex: SC"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs uppercase font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Dica contextual de frete da própria fábrica / facilidade para limpar transportadora */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-blue-50/80 border border-blue-200 text-blue-900 text-[11px]">
+                  <span>
+                    💡 <strong>Transporte da Própria Fábrica:</strong> Se a fábrica (ex: Ritmi) retira as peças com veículo próprio, selecione <em>4 - Transporte Próprio (Destinatário)</em>. A SEFAZ não exige dados da transportadora quando o frete é próprio.
+                  </span>
+                  {(transportadorNome || transportadorCnpj) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTransportadorNome("");
+                        setTransportadorCnpj("");
+                        setTransportadorIe("");
+                        setTransportadorUf("");
+                        setTransportadorMunicipio("");
+                        setPlacaVeiculo("");
+                        setUfVeiculo("");
+                        if (modalidadeFrete === "0") setModalidadeFrete("4");
+                      }}
+                      className="whitespace-nowrap px-2.5 py-1 bg-white border border-blue-300 hover:bg-blue-100 rounded-lg font-medium text-blue-700 text-[10px] transition-colors"
+                    >
+                      Limpar Transportadora
+                    </button>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
