@@ -66,7 +66,7 @@ export async function getSubscriptionInfoAction(): Promise<SubscriptionInfo> {
   }
 
   const { calculateNextDueDate, VALOR_MENSALIDADE_COM_TAXA } = await import("@/lib/services/asaas");
-  const diaVenc = tenant.diaVencimento || 5;
+  const diaVenc = tenant.diaVencimento || 10;
   const rawDueDate = calculateNextDueDate(diaVenc);
   const [yyyy, mm, dd] = rawDueDate.split("-");
   const proximaFaturaData = `${dd}/${mm}/${yyyy}`;

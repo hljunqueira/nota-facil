@@ -3,18 +3,20 @@
  * Inicializa e gerencia os workers BullMQ e agendamentos periódicos (Cron).
  */
 
-import { syncInvoicesQueue } from "@/lib/queue";
+import { syncInvoicesQueue, billingQueue } from "@/lib/queue";
 import { createSyncInvoicesWorker } from "./syncInvoicesWorker";
 import { createMonthlyCloseWorker } from "./monthlyCloseWorker";
+import { createMonthlyBillingWorker } from "./monthlyBillingWorker";
 
 async function bootstrap() {
   console.log("==================================================");
   console.log("🚀 [Nota Fácil Worker] Inicializando Background Runners...");
   console.log("==================================================");
 
-  // Inicializa worker de sincronização MDe
+  // Inicializa workers
   const syncWorker = createSyncInvoicesWorker();
   const monthlyWorker = createMonthlyCloseWorker();
+  const billingWorker = createMonthlyBillingWorker();
 
   syncWorker.on("completed", (job) => {
     console.log(`[Worker:sync-invoices] Job ${job.id} concluído com sucesso.`);
@@ -30,6 +32,14 @@ async function bootstrap() {
 
   monthlyWorker.on("failed", (job, err) => {
     console.error(`[Worker:monthly-close] Job ${job?.id} falhou:`, err);
+  });
+
+  billingWorker.on("completed", (job) => {
+    console.log(`[Worker:billing] Job ${job.id} concluído com sucesso.`);
+  });
+
+  billingWorker.on("failed", (job, err) => {
+    console.error(`[Worker:billing] Job ${job?.id} falhou:`, err);
   });
 
   // Agendamento periódico de sincronização MDe (a cada 2 horas)
@@ -49,11 +59,28 @@ async function bootstrap() {
     console.warn("⚠️ [Worker] Aviso ao registrar agendamento no Redis:", scheduleErr);
   }
 
+  // Agendamento mensal de faturamento Asaas (todo dia 1º às 08:00 com vencimento no dia 10)
+  try {
+    await billingQueue.add(
+      "generate-monthly-bills",
+      {},
+      {
+        repeat: {
+          pattern: "0 8 1 * *", // Todo dia 1º de cada mês às 08:00
+        },
+        jobId: "scheduled-monthly-billing",
+      }
+    );
+    console.log("⏰ [Worker] Agendamento de Faturamento Mensal Asaas registrado: todo dia 1º às 08:00 (0 8 1 * *).");
+  } catch (scheduleErr) {
+    console.warn("⚠️ [Worker] Aviso ao registrar agendamento de faturamento no Redis:", scheduleErr);
+  }
+
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     console.log(`\n🛑 [Worker] Sinal ${signal} recebido. Encerrando graciosamente...`);
     try {
-      await Promise.all([syncWorker.close(), monthlyWorker.close()]);
+      await Promise.all([syncWorker.close(), monthlyWorker.close(), billingWorker.close()]);
       console.log("✅ [Worker] Workers encerrados.");
       process.exit(0);
     } catch (err) {

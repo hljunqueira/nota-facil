@@ -423,3 +423,191 @@ export async function getAsaasPaymentPix(paymentId: string): Promise<{
     return null;
   }
 }
+
+/**
+ * Cancela todas as cobranças pendentes e assinaturas de um tenant no Asaas
+ */
+export async function cancelAllPendingAsaasChargesAndSubscriptions(tenantId: string) {
+  const tenant = await prismaAdmin.tenant.findUnique({
+    where: { id: tenantId },
+  });
+
+  if (!tenant || !tenant.asaasCustomerId) {
+    return { success: false, error: "Oficina ou cliente Asaas não encontrado." };
+  }
+
+  const customerId = tenant.asaasCustomerId;
+  const headers = getHeaders();
+  let cancelledSubscriptionsCount = 0;
+  let cancelledPaymentsCount = 0;
+
+  // 1. Cancela todas as assinaturas vinculadas ao cliente no Asaas
+  try {
+    const subRes = await fetch(`${getAsaasApiUrl()}/subscriptions?customer=${customerId}&status=ACTIVE&limit=20`, {
+      headers,
+    });
+    if (subRes.ok) {
+      const subData = await subRes.json();
+      for (const s of subData.data || []) {
+        try {
+          const delRes = await fetch(`${getAsaasApiUrl()}/subscriptions/${s.id}`, {
+            method: "DELETE",
+            headers,
+          });
+          if (delRes.ok) cancelledSubscriptionsCount++;
+        } catch (e) {
+          console.warn(`[Asaas] Erro ao deletar assinatura ${s.id}:`, e);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Asaas] Erro ao listar assinaturas ativas:", err);
+  }
+
+  // 2. Busca e cancela todas as cobranças pendentes
+  try {
+    const payRes = await fetch(`${getAsaasApiUrl()}/payments?customer=${customerId}&status=PENDING&limit=100`, {
+      headers,
+    });
+    if (payRes.ok) {
+      const payData = await payRes.json();
+      const payments = payData.data || [];
+      for (const p of payments) {
+        try {
+          const delRes = await fetch(`${getAsaasApiUrl()}/payments/${p.id}`, {
+            method: "DELETE",
+            headers,
+          });
+          if (delRes.ok) cancelledPaymentsCount++;
+        } catch (delErr) {
+          console.warn(`[Asaas] Erro ao deletar cobrança ${p.id}:`, delErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Asaas] Erro ao listar cobranças pendentes:", err);
+  }
+
+  // 3. Atualiza o tenant no banco: dia de vencimento fixado no dia 10
+  await prismaAdmin.tenant.update({
+    where: { id: tenantId },
+    data: {
+      diaVencimento: 10,
+      asaasSubscriptionId: null,
+    },
+  });
+
+  return {
+    success: true,
+    cancelledSubscriptionsCount,
+    cancelledPaymentsCount,
+  };
+}
+
+/**
+ * Emite uma cobrança de mensalidade do mês com vencimento fixo no dia 10
+ */
+export async function createMonthlyChargeForTenant(
+  tenantId: string,
+  targetDate?: { year?: number; month?: number; day?: number }
+) {
+  const tenant = await prismaAdmin.tenant.findUnique({
+    where: { id: tenantId },
+  });
+
+  if (!tenant) {
+    throw new Error("Oficina não encontrada.");
+  }
+
+  const customerId = await getOrCreateAsaasCustomer(tenant);
+  const now = new Date();
+  const year = targetDate?.year || now.getFullYear();
+  const month = targetDate?.month !== undefined ? targetDate.month : now.getMonth() + 1; // 1-12
+  const day = targetDate?.day || 10;
+
+  const yyyy = String(year);
+  const mm = String(month).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  const dueDate = `${yyyy}-${mm}-${dd}`;
+
+  const valorFinal = VALOR_MENSALIDADE_COM_TAXA;
+
+  const body = {
+    customer: customerId,
+    billingType: "BOLETO", // Gera boleto bancário e Pix integrados
+    value: valorFinal,
+    dueDate,
+    description: `Mensalidade Nota Fácil — Mês ${mm}/${yyyy} (${tenant.plano === "PARCERIA" ? "Plano Parceria 24m" : "Plano Flex"})`,
+    externalReference: `MENSALIDADE_${tenantId}_${yyyy}_${mm}`,
+    postalService: false,
+  };
+
+  const res = await fetch(`${getAsaasApiUrl()}/payments`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Falha ao gerar cobrança no Asaas: ${errText}`);
+  }
+
+  const paymentData = await res.json();
+  return {
+    success: true,
+    payment: paymentData,
+  };
+}
+
+/**
+ * Rotina executada todo dia 1º do mês para gerar as cobranças com vencimento no dia 10
+ */
+export async function generateMonthlyChargesForAllActiveTenants() {
+  console.log("[AsaasCron] Iniciando geração mensal de faturas para todas as oficinas ativas...");
+  const tenants = await prismaAdmin.tenant.findMany({
+    where: {
+      statusConta: { in: ["ATIVO", "EM_ONBOARDING"] },
+      statusCadastro: "APROVADO",
+    },
+  });
+
+  const now = new Date();
+  const yyyy = String(now.getFullYear());
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const targetDueDate = `${yyyy}-${mm}-10`;
+
+  let createdCount = 0;
+  let skippedCount = 0;
+
+  for (const t of tenants) {
+    try {
+      const customerId = t.asaasCustomerId || (await getOrCreateAsaasCustomer(t));
+
+      // Verifica se já existe cobrança com este vencimento ou referência externa
+      const extRef = `MENSALIDADE_${t.id}_${yyyy}_${mm}`;
+      const checkRes = await fetch(`${getAsaasApiUrl()}/payments?customer=${customerId}&externalReference=${extRef}`, {
+        headers: getHeaders(),
+      });
+      const checkData = await checkRes.json();
+      if (checkData.data && checkData.data.length > 0) {
+        console.log(`[AsaasCron] Tenant ${t.razaoSocial} já possui fatura gerada para ${mm}/${yyyy}. Pulando.`);
+        skippedCount++;
+        continue;
+      }
+
+      await createMonthlyChargeForTenant(t.id, {
+        year: now.getFullYear(),
+        month: now.getMonth() + 1,
+        day: 10,
+      });
+      createdCount++;
+      console.log(`[AsaasCron] Fatura gerada com sucesso para ${t.razaoSocial} vencendo em ${targetDueDate}.`);
+    } catch (err) {
+      console.error(`[AsaasCron] Erro ao gerar fatura para tenant ${t.id} (${t.razaoSocial}):`, err);
+    }
+  }
+
+  return { createdCount, skippedCount, totalTenants: tenants.length };
+}
+

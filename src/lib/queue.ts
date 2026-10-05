@@ -49,3 +49,18 @@ export const monthlyCloseQueue = new Queue("monthly-close", {
     removeOnFail: 50,
   },
 });
+
+// Fila de Faturamento Mensal Recorrente Asaas (Todo dia 1º com vencimento dia 10)
+export const billingQueue = new Queue("billing", {
+  connection: redisConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: "exponential",
+      delay: 10000,
+    },
+    removeOnComplete: 100,
+    removeOnFail: 200,
+  },
+});
+
