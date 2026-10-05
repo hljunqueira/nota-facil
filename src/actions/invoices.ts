@@ -13,6 +13,8 @@ import {
   buildFocusNfePayload,
   buildFocusNfeCobrancaPayload,
   InvertedItem,
+  getRetornoConferencia,
+  RetornoConferenciaResult,
 } from "@/lib/services/inversion";
 import { uploadInvoiceXml, uploadInvoicePdf, getFileFromStorage } from "@/lib/storage";
 import {
@@ -1631,3 +1633,22 @@ export async function deleteInvoiceAction(invoiceId: string) {
     };
   }
 }
+
+/**
+ * Consulta a conferência e pré-visualização de retorno (parcial ou total) de uma nota fiscal de entrada
+ */
+export async function getRetornoConferenciaAction(
+  invoiceEntradaId: string
+): Promise<{ success: boolean; data?: RetornoConferenciaResult; error?: string }> {
+  try {
+    const { tenantId } = await requireTenantSession();
+    return await getRetornoConferencia(tenantId, invoiceEntradaId);
+  } catch (err: any) {
+    console.error("[getRetornoConferenciaAction] Erro:", err);
+    return {
+      success: false,
+      error: err.message || "Erro ao consultar conferência de retorno da nota.",
+    };
+  }
+}
+

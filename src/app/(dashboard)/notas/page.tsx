@@ -25,6 +25,8 @@ import {
   Mail,
   Truck,
   Trash2,
+  Eye,
+  PackageCheck,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import {
@@ -36,6 +38,7 @@ import {
   deleteInvoiceAction,
 } from "@/actions/invoices";
 import { InversionPreviewDialog } from "@/components/modules/invoices/InversionPreviewDialog";
+import { RetornoPreviewModal } from "@/components/modules/invoices/RetornoPreviewModal";
 import { ImportXmlModal } from "@/components/modules/invoices/ImportXmlModal";
 import { ImportEspelhoModal } from "@/components/modules/invoices/ImportEspelhoModal";
 import { MonthlyCloseModal } from "@/components/modules/invoices/MonthlyCloseModal";
@@ -93,6 +96,15 @@ export default function NotasPage() {
 
   // Importação
   const [showImportModal, setShowImportModal] = useState(false);
+
+  // Conferência e Pré-visualização de Retorno (CFOP 5902 - Parcial / Total / Diagnóstico)
+  const [retornoPreviewInvoiceId, setRetornoPreviewInvoiceId] = useState<string | null>(null);
+  const [showRetornoPreviewModal, setShowRetornoPreviewModal] = useState(false);
+
+  const handleOpenRetornoConferencia = (invoiceId: string) => {
+    setRetornoPreviewInvoiceId(invoiceId);
+    setShowRetornoPreviewModal(true);
+  };
 
   const loadInvoices = async (isSilent = false, syncSefaz = false) => {
     if (!isSilent) setLoading(true);
@@ -574,21 +586,27 @@ export default function NotasPage() {
           {/* ======================================================== */}
           <div className="block md:hidden space-y-3.5">
             {filteredInvoices.map((inv) => {
-              const linkedRetorno = inv.chaveAcesso
-                ? invoices.find(
+              const cleanChave = (inv.chaveAcesso || "").replace(/\D/g, "");
+              const linkedRetornos = cleanChave
+                ? invoices.filter(
                   (s) =>
                     s.tipo === "SAIDA" &&
-                    s.chaveNfeReferenciada === inv.chaveAcesso &&
+                    (s.chaveNfeReferenciada?.replace(/\D/g, "") === cleanChave ||
+                     s.rawJson?.chaveAcessoEntrada?.replace(/\D/g, "") === cleanChave) &&
                     (s.modalidadeEmissao === "RETORNO_MERCADORIA" || s.modalidadeEmissao === "CONJUNTA") &&
                     s.status !== "CANCELADA"
                 )
-                : null;
+                : [];
 
-              const linkedCobranca = inv.chaveAcesso
+              const linkedRetornoAutorizado = linkedRetornos.find((s) => s.status === "AUTORIZADA");
+              const linkedRetornoRejeitado = linkedRetornos.find((s) => s.status === "REJEITADA");
+              const linkedRetorno = linkedRetornoAutorizado || linkedRetornos[0] || null;
+
+              const linkedCobranca = cleanChave
                 ? invoices.find(
                   (s) =>
                     s.tipo === "SAIDA" &&
-                    (s.chaveNfeReferenciada === inv.chaveAcesso || s.rawJson?.remessaOrigemId === inv.id) &&
+                    (s.chaveNfeReferenciada?.replace(/\D/g, "") === cleanChave || s.rawJson?.remessaOrigemId === inv.id) &&
                     (s.modalidadeEmissao === "COBRANCA_INDUSTRIALIZACAO" || s.modalidadeEmissao === "CONJUNTA") &&
                     s.status !== "CANCELADA"
                 )
@@ -824,6 +842,31 @@ export default function NotasPage() {
                           </button>
                         </div>
                       )}
+
+                      {/* Alerta de Rejeição SEFAZ caso o retorno tenha sido rejeitado */}
+                      {linkedRetornoRejeitado && !linkedRetornoAutorizado && (
+                        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 text-rose-800 font-bold">
+                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                            <span>Rejeição SEFAZ na NF-e #{linkedRetornoRejeitado.numero}</span>
+                          </div>
+                          <button
+                            onClick={() => handleOpenRetornoConferencia(inv.id)}
+                            className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] shrink-0"
+                          >
+                            Ver Erro
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Botão de Conferência de Retorno (Parcial / Saldo / Peças) */}
+                      <button
+                        onClick={() => handleOpenRetornoConferencia(inv.id)}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-xs border border-blue-200/80 transition-colors min-h-[44px] cursor-pointer"
+                      >
+                        <Eye className="w-4 h-4 text-blue-600" />
+                        <span>Conferir Retorno da NF (Parcial / Total)</span>
+                      </button>
                     </div>
                   )}
 
@@ -1115,123 +1158,147 @@ export default function NotasPage() {
                         <div className="flex items-center justify-end gap-1.5">
                           {/* Ações contextuais inteligentes para notas de ENTRADA */}
                           {inv.tipo === "ENTRADA" && (() => {
-                            const linkedRetorno = inv.chaveAcesso
-                              ? invoices.find(
+                            const cleanChave = (inv.chaveAcesso || "").replace(/\D/g, "");
+                            const linkedRetornos = cleanChave
+                              ? invoices.filter(
                                 (s) =>
                                   s.tipo === "SAIDA" &&
-                                  s.chaveNfeReferenciada === inv.chaveAcesso &&
+                                  (s.chaveNfeReferenciada?.replace(/\D/g, "") === cleanChave ||
+                                   s.rawJson?.chaveAcessoEntrada?.replace(/\D/g, "") === cleanChave) &&
                                   (s.modalidadeEmissao === "RETORNO_MERCADORIA" || s.modalidadeEmissao === "CONJUNTA") &&
                                   s.status !== "CANCELADA"
                               )
-                              : null;
+                              : [];
 
-                            const linkedCobranca = inv.chaveAcesso
+                            const linkedRetornoAutorizado = linkedRetornos.find((s) => s.status === "AUTORIZADA");
+                            const linkedRetornoRejeitado = linkedRetornos.find((s) => s.status === "REJEITADA");
+                            const linkedRetorno = linkedRetornoAutorizado || linkedRetornos[0] || null;
+
+                            const linkedCobranca = cleanChave
                               ? invoices.find(
                                 (s) =>
                                   s.tipo === "SAIDA" &&
-                                  (s.chaveNfeReferenciada === inv.chaveAcesso || s.rawJson?.remessaOrigemId === inv.id) &&
+                                  (s.chaveNfeReferenciada?.replace(/\D/g, "") === cleanChave || s.rawJson?.remessaOrigemId === inv.id) &&
                                   (s.modalidadeEmissao === "COBRANCA_INDUSTRIALIZACAO" || s.modalidadeEmissao === "CONJUNTA") &&
                                   s.status !== "CANCELADA"
                               )
                               : null;
 
-                            if (linkedRetorno && linkedCobranca) {
-                              return (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
-                                    ✓ Lote Concluído
-                                  </span>
-                                  {linkedRetorno.pdfUrl && (
-                                    <a
-                                      href={linkedRetorno.pdfUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 text-[10px] font-mono border border-slate-200"
-                                      title="Ver DANFE de Retorno"
-                                    >
-                                      Retorno #{linkedRetorno.numero}
-                                    </a>
-                                  )}
-                                  {linkedCobranca.pdfUrl && (
-                                    <a
-                                      href={linkedCobranca.pdfUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[10px] font-mono border border-emerald-200"
-                                      title="Ver DANFE de Cobrança"
-                                    >
-                                      Cobrança #{linkedCobranca.numero}
-                                    </a>
-                                  )}
-                                  <button
-                                    onClick={() => {
-                                      setSelectedInvoiceForRomaneio(linkedRetorno || linkedCobranca);
-                                      setShowRomaneioModal(true);
-                                    }}
-                                    title="Exportar Romaneio de Carga para Transporte"
-                                    className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300 cursor-pointer shadow-2xs"
-                                  >
-                                    Romaneio
-                                  </button>
-                                </div>
-                              );
-                            }
-
-                            if (linkedRetorno && !linkedCobranca) {
-                              return (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
-                                    ✓ Retorno #{linkedRetorno.numero}
-                                  </span>
-                                  <button
-                                    onClick={() => {
-                                      setSelectedInvoiceForRomaneio(linkedRetorno);
-                                      setShowRomaneioModal(true);
-                                    }}
-                                    title="Exportar Romaneio de Carga para Transporte"
-                                    className="px-2 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold border border-amber-300 cursor-pointer shadow-2xs"
-                                  >
-                                    Romaneio
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setSelectedInvoiceForEspelho(inv);
-                                      setShowEspelhoModal(true);
-                                    }}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-all cursor-pointer shadow-xs"
-                                  >
-                                    <FileText className="w-3.5 h-3.5" />
-                                    <span>Passo 2: Faturar (5124)</span>
-                                  </button>
-                                </div>
-                              );
-                            }
-
                             return (
-                              <div className="flex items-center gap-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                                {/* Botão de Conferência de Retorno (Sempre visível para conferência de peças/parcial/total) */}
                                 <button
-                                  onClick={() => handleStartInversion(inv.id)}
-                                  disabled={inversionLoadingId === inv.id}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white font-semibold text-xs shadow-xs transition-all cursor-pointer disabled:opacity-60"
-                                  title="Devolver o tecido à fábrica copiando peso, volumes e frete"
+                                  onClick={() => handleOpenRetornoConferencia(inv.id)}
+                                  title="Conferir retorno parcial/total da remessa e saldo de peças"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 transition-colors cursor-pointer shadow-2xs"
                                 >
-                                  {inversionLoadingId === inv.id ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  ) : (
-                                    <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
-                                  )}
-                                  <span>Passo 1: Retorno (5904/5902)</span>
+                                  <Eye className="w-3.5 h-3.5 text-blue-600" />
+                                  <span>Conferir Retorno</span>
                                 </button>
-                                <button
-                                  onClick={() => {
-                                    setSelectedInvoiceForEspelho(inv);
-                                    setShowEspelhoModal(true);
-                                  }}
-                                  title="Faturar a costura com o espelho da fábrica"
-                                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
-                                >
-                                  Passo 2: Faturar (5124)
-                                </button>
+
+                                {/* Alerta de Rejeição SEFAZ */}
+                                {linkedRetornoRejeitado && !linkedRetornoAutorizado && (
+                                  <button
+                                    onClick={() => handleOpenRetornoConferencia(inv.id)}
+                                    title={`Rejeição SEFAZ na NF-e #${linkedRetornoRejeitado.numero}`}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[10px] border border-rose-200 cursor-pointer"
+                                  >
+                                    <AlertCircle className="w-3 h-3 text-rose-600" />
+                                    <span>Erro SEFAZ #{linkedRetornoRejeitado.numero}</span>
+                                  </button>
+                                )}
+
+                                {linkedRetorno && linkedCobranca ? (
+                                  <>
+                                    <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                                      ✓ Lote Concluído
+                                    </span>
+                                    {linkedRetorno.pdfUrl && (
+                                      <a
+                                        href={linkedRetorno.pdfUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-2 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 text-[10px] font-mono border border-slate-200"
+                                        title="Ver DANFE de Retorno"
+                                      >
+                                        Retorno #{linkedRetorno.numero}
+                                      </a>
+                                    )}
+                                    {linkedCobranca.pdfUrl && (
+                                      <a
+                                        href={linkedCobranca.pdfUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[10px] font-mono border border-emerald-200"
+                                        title="Ver DANFE de Cobrança"
+                                      >
+                                        Cobrança #{linkedCobranca.numero}
+                                      </a>
+                                    )}
+                                    <button
+                                      onClick={() => {
+                                        setSelectedInvoiceForRomaneio(linkedRetorno || linkedCobranca);
+                                        setShowRomaneioModal(true);
+                                      }}
+                                      title="Exportar Romaneio de Carga para Transporte"
+                                      className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300 cursor-pointer shadow-2xs"
+                                    >
+                                      Romaneio
+                                    </button>
+                                  </>
+                                ) : linkedRetorno && !linkedCobranca ? (
+                                  <>
+                                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
+                                      ✓ Retorno #{linkedRetorno.numero}
+                                    </span>
+                                    <button
+                                      onClick={() => {
+                                        setSelectedInvoiceForRomaneio(linkedRetorno);
+                                        setShowRomaneioModal(true);
+                                      }}
+                                      title="Exportar Romaneio de Carga para Transporte"
+                                      className="px-2 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold border border-amber-300 cursor-pointer shadow-2xs"
+                                    >
+                                      Romaneio
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setSelectedInvoiceForEspelho(inv);
+                                        setShowEspelhoModal(true);
+                                      }}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-all cursor-pointer shadow-xs"
+                                    >
+                                      <FileText className="w-3.5 h-3.5" />
+                                      <span>Passo 2: Faturar (5124)</span>
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => handleStartInversion(inv.id)}
+                                      disabled={inversionLoadingId === inv.id}
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white font-semibold text-xs shadow-xs transition-all cursor-pointer disabled:opacity-60"
+                                      title="Devolver o tecido à fábrica copiando peso, volumes e frete"
+                                    >
+                                      {inversionLoadingId === inv.id ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                                      )}
+                                      <span>Passo 1: Retorno (5904/5902)</span>
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setSelectedInvoiceForEspelho(inv);
+                                        setShowEspelhoModal(true);
+                                      }}
+                                      title="Faturar a costura com o espelho da fábrica"
+                                      className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+                                    >
+                                      Passo 2: Faturar (5124)
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             );
                           })()}
@@ -1506,6 +1573,19 @@ export default function NotasPage() {
           loadInvoices(true);
         }}
       />
+
+      <RetornoPreviewModal
+        isOpen={showRetornoPreviewModal}
+        invoiceId={retornoPreviewInvoiceId}
+        onClose={() => {
+          setShowRetornoPreviewModal(false);
+          setRetornoPreviewInvoiceId(null);
+        }}
+        onEmitirRetornoSaldo={(invId) => {
+          handleStartInversion(invId);
+        }}
+      />
     </div>
   );
 }
+

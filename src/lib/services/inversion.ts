@@ -698,3 +698,276 @@ export function buildFocusNfeCobrancaPayload({
     informacoes_adicionais_contribuinte: infAdic,
   };
 }
+
+export interface ItemConferenciaRetorno {
+  numeroItem: number;
+  codigo: string;
+  descricao: string;
+  ncm: string;
+  unidade: string;
+  quantidadeEntrada: number;
+  quantidadeDevolvida: number;
+  saldoRestante: number;
+  valorUnitario: number;
+  valorTotalEntrada: number;
+  valorTotalDevolvido: number;
+  isVestuario: boolean;
+  status: "CONCLUIDO" | "PARCIAL" | "PENDENTE";
+}
+
+export interface NotaRetornoVinculada {
+  id: string;
+  numero: number;
+  serie: number | string;
+  chaveAcesso: string | null;
+  status: string;
+  dataEmissao: Date | null;
+  valorTotal: number;
+  pdfUrl: string | null;
+  xmlUrl: string | null;
+  mensagemSefaz?: string | null;
+  itensDevolvidos?: Array<{
+    codigo?: string;
+    descricao?: string;
+    quantidade: number;
+  }>;
+}
+
+export interface RetornoConferenciaResult {
+  notaEntrada: {
+    id: string;
+    numero: number;
+    serie: number | string;
+    chaveAcesso: string;
+    dataEmissao: Date;
+    valorTotal: number;
+    fabrica: {
+      nome: string;
+      cnpj: string;
+      cidade?: string;
+      uf?: string;
+    };
+  };
+  notasRetornoVinculadas: NotaRetornoVinculada[];
+  itens: ItemConferenciaRetorno[];
+  resumo: {
+    totalPecasEntrada: number;
+    totalPecasDevolvidas: number;
+    saldoPecasRestante: number;
+    totalItensEntrada: number;
+    itensConcluidos: number;
+    totalValorEntrada: number;
+    totalValorDevolvido: number;
+    statusGeral: "CONCLUIDO" | "PARCIAL" | "PENDENTE" | "ERRO_SEFAZ";
+    mensagemDiagnostico: string;
+    tudoCerto: boolean;
+  };
+}
+
+export function calculateRetornoConferencia(
+  notaEntrada: any,
+  notasSaida: any[]
+): RetornoConferenciaResult {
+  const rawData: any = notaEntrada.rawJson || {};
+  const itensEntrada: any[] = rawData.itens || [];
+
+  const notasRetornoVinculadas: NotaRetornoVinculada[] = notasSaida.map((s) => {
+    const sRaw: any = s.rawJson || {};
+    const itensPayload: any[] = sRaw.payloadEnviado?.itens || sRaw.itens || [];
+    const ultimaConsulta = sRaw.ultimaConsultaFocus || sRaw.focusResponse || {};
+    const msgSefaz = ultimaConsulta.mensagem_sefaz || ultimaConsulta.erros || null;
+
+    return {
+      id: s.id,
+      numero: s.numero,
+      serie: s.serie,
+      chaveAcesso: s.chaveAcesso,
+      status: s.status,
+      dataEmissao: s.dataEmissao || s.createdAt,
+      valorTotal: Number(s.valorTotal || 0),
+      pdfUrl: s.pdfUrl || null,
+      xmlUrl: s.xmlUrl || null,
+      mensagemSefaz: msgSefaz,
+      itensDevolvidos: itensPayload.map((it: any) => ({
+        codigo: it.codigo_produto || it.codigo,
+        descricao: it.descricao,
+        quantidade: Number(it.quantidade_comercial || it.quantidade || 0),
+      })),
+    };
+  });
+
+  // Filtra apenas notas de retorno que foram autorizadas (ou pendentes em processamento)
+  const notasAutorizadas = notasRetornoVinculadas.filter((n) => n.status === "AUTORIZADA");
+  const notasRejeitadas = notasRetornoVinculadas.filter((n) => n.status === "REJEITADA");
+  const notasProcessando = notasRetornoVinculadas.filter((n) => n.status === "PENDENTE" || n.status === "PROCESSANDO");
+
+  // Dicionário de quantidades devolvidas agrupadas por código/descrição
+  const mapaDevolvido: Record<string, number> = {};
+  for (const n of notasAutorizadas) {
+    for (const it of n.itensDevolvidos || []) {
+      const keyCod = (it.codigo || "").trim().toUpperCase();
+      const keyDesc = (it.descricao || "").replace(/^Retorno de\s+/i, "").trim().toUpperCase();
+      if (keyCod) {
+        mapaDevolvido[keyCod] = (mapaDevolvido[keyCod] || 0) + it.quantidade;
+      }
+      if (keyDesc) {
+        mapaDevolvido[keyDesc] = (mapaDevolvido[keyDesc] || 0) + it.quantidade;
+      }
+    }
+  }
+
+  let totalPecasEntrada = 0;
+  let totalPecasDevolvidas = 0;
+  let totalValorEntrada = 0;
+  let totalValorDevolvido = 0;
+  let itensConcluidos = 0;
+
+  const itensConferencia: ItemConferenciaRetorno[] = itensEntrada.map((item, idx) => {
+    const qtdEntrada = Number(item.quantidade || 0);
+    const vUnit = Number(item.valorUnitario || 0);
+    const vTotEntrada = Number(item.valorTotal || qtdEntrada * vUnit || 0);
+    const isVest = isVestuarioItem(item);
+
+    const keyCod = (item.codigo || `ITEM-${idx + 1}`).trim().toUpperCase();
+    const keyDesc = (item.descricao || "").trim().toUpperCase();
+
+    // Busca quantidade devolvida pelo código ou pela descrição
+    const qtdDevolvida = Math.min(
+      qtdEntrada,
+      mapaDevolvido[keyCod] !== undefined ? mapaDevolvido[keyCod] : (mapaDevolvido[keyDesc] || 0)
+    );
+
+    const saldoRestante = Math.max(0, parseFloat((qtdEntrada - qtdDevolvida).toFixed(3)));
+    const vTotDevolvido = parseFloat((qtdDevolvida * vUnit).toFixed(2));
+
+    totalValorEntrada += vTotEntrada;
+    totalValorDevolvido += vTotDevolvido;
+
+    if (isVest) {
+      totalPecasEntrada += qtdEntrada;
+      totalPecasDevolvidas += qtdDevolvida;
+    }
+
+    let statusItem: "CONCLUIDO" | "PARCIAL" | "PENDENTE" = "PENDENTE";
+    if (saldoRestante === 0 && qtdDevolvida > 0) {
+      statusItem = "CONCLUIDO";
+      itensConcluidos++;
+    } else if (qtdDevolvida > 0) {
+      statusItem = "PARCIAL";
+    }
+
+    return {
+      numeroItem: idx + 1,
+      codigo: item.codigo || `ITEM-${idx + 1}`,
+      descricao: item.descricao || "Item sem descrição",
+      ncm: item.ncm || "61091000",
+      unidade: item.unidade || "UN",
+      quantidadeEntrada: qtdEntrada,
+      quantidadeDevolvida: qtdDevolvida,
+      saldoRestante,
+      valorUnitario: vUnit,
+      valorTotalEntrada: vTotEntrada,
+      valorTotalDevolvido: vTotDevolvido,
+      isVestuario: isVest,
+      status: statusItem,
+    };
+  });
+
+  const saldoPecasRestante = Math.max(0, totalPecasEntrada - totalPecasDevolvidas);
+
+  let statusGeral: "CONCLUIDO" | "PARCIAL" | "PENDENTE" | "ERRO_SEFAZ" = "PENDENTE";
+  let mensagemDiagnostico = "";
+  let tudoCerto = false;
+
+  if (notasAutorizadas.length > 0 && saldoPecasRestante === 0 && (itensConcluidos === itensEntrada.length || totalPecasEntrada > 0)) {
+    statusGeral = "CONCLUIDO";
+    tudoCerto = true;
+    const nums = notasAutorizadas.map((n) => `#${n.numero}`).join(", ");
+    mensagemDiagnostico = `Tudo certo! Lote de ${totalPecasEntrada} peças totalmente devolvido através da(s) NF-e ${nums} autorizada(s) na SEFAZ.`;
+  } else if (notasAutorizadas.length > 0 && totalPecasDevolvidas > 0) {
+    statusGeral = "PARCIAL";
+    tudoCerto = false;
+    mensagemDiagnostico = `Retorno Parcial! Foram devolvidas ${totalPecasDevolvidas} de ${totalPecasEntrada} peças. Restam ${saldoPecasRestante} peças para devolução.`;
+  } else if (notasRejeitadas.length > 0 && notasAutorizadas.length === 0) {
+    statusGeral = "ERRO_SEFAZ";
+    tudoCerto = false;
+    const lastRejeicao = notasRejeitadas[0].mensagemSefaz || "Rejeição na transmissão para a SEFAZ.";
+    mensagemDiagnostico = `A NF-e #${notasRejeitadas[0].numero} foi rejeitada pela SEFAZ: ${lastRejeicao}`;
+  } else if (notasProcessando.length > 0) {
+    statusGeral = "PENDENTE";
+    tudoCerto = false;
+    mensagemDiagnostico = `Nota de retorno Nº ${notasProcessando[0].numero} está em processamento de autorização na SEFAZ.`;
+  } else {
+    statusGeral = "PENDENTE";
+    tudoCerto = false;
+    mensagemDiagnostico = `Nenhuma nota de retorno foi emitida ainda para este lote de ${totalPecasEntrada} peças.`;
+  }
+
+  const partner = notaEntrada.partner || rawData.emitente || {};
+
+  return {
+    notaEntrada: {
+      id: notaEntrada.id,
+      numero: notaEntrada.numero,
+      serie: notaEntrada.serie,
+      chaveAcesso: notaEntrada.chaveAcesso,
+      dataEmissao: notaEntrada.dataEmissao,
+      valorTotal: Number(notaEntrada.valorTotal || 0),
+      fabrica: {
+        nome: partner.razaoSocial || "Fábrica Parceira",
+        cnpj: partner.cnpj || "",
+        cidade: partner.municipio || "",
+        uf: partner.uf || "SC",
+      },
+    },
+    notasRetornoVinculadas,
+    itens: itensConferencia,
+    resumo: {
+      totalPecasEntrada,
+      totalPecasDevolvidas,
+      saldoPecasRestante,
+      totalItensEntrada: itensEntrada.length,
+      itensConcluidos,
+      totalValorEntrada: parseFloat(totalValorEntrada.toFixed(2)),
+      totalValorDevolvido: parseFloat(totalValorDevolvido.toFixed(2)),
+      statusGeral,
+      mensagemDiagnostico,
+      tudoCerto,
+    },
+  };
+}
+
+export async function getRetornoConferencia(
+  tenantId: string,
+  invoiceEntradaId: string
+): Promise<{ success: boolean; data?: RetornoConferenciaResult; error?: string }> {
+  const tenantPrisma = createTenantPrisma(tenantId);
+
+  const invoiceEntrada = await tenantPrisma.invoice.findUnique({
+    where: { id: invoiceEntradaId },
+    include: { partner: true },
+  });
+
+  if (!invoiceEntrada) {
+    return { success: false, error: "Nota fiscal de remessa não encontrada." };
+  }
+
+  const cleanChave = (invoiceEntrada.chaveAcesso || "").replace(/\D/g, "");
+
+  // Busca todas as notas de saída vinculadas a esta remessa
+  const notasSaida = await tenantPrisma.invoice.findMany({
+    where: {
+      tipo: "SAIDA",
+      modalidadeEmissao: { in: ["RETORNO_MERCADORIA", "CONJUNTA"] },
+      status: { not: "CANCELADA" },
+      OR: [
+        { chaveNfeReferenciada: { contains: cleanChave } },
+        { rawJson: { path: ["chaveAcessoEntrada"], equals: cleanChave } },
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const result = calculateRetornoConferencia(invoiceEntrada, notasSaida);
+  return { success: true, data: result };
+}

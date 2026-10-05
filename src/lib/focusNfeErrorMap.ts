@@ -112,6 +112,15 @@ const KNOWN_FISCAL_ERRORS: KnownErrorPattern[] = [
       "Se o transporte for próprio da fábrica (ex: Ritmi), selecione a modalidade '4 - Transporte Próprio (Destinatário)' e deixe os dados da transportadora em branco, ou informe a UF da fábrica (SC).",
     gravidade: "ERRO",
   },
+  {
+    padroes: ["267", /chave.*referenciada.*inexistente/i, /chave de acesso referenciada inexistente/i],
+    titulo: "Chave de Acesso Referenciada Não Encontrada na SEFAZ",
+    descricao:
+      "A SEFAZ não localizou a NF-e de entrada referenciada na sua base de dados. Isso ocorre frequentemente quando a remessa da fábrica foi emitida em PRODUÇÃO mas a sua conta está configurada no ambiente de HOMOLOGAÇÃO (ou vice-versa).",
+    comoResolver:
+      "Acesse 'Configurações' > 'Integração Focus NFe' e altere o Ambiente para 'PRODUÇÃO' se estiver emitindo notas fiscais reais, ou certifique-se de que a remessa também foi emitida em homologação para testes.",
+    gravidade: "ERRO",
+  },
 ];
 
 /**
