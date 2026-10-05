@@ -230,11 +230,11 @@ export default function CadastroPage() {
             <CheckCircle2 className="w-9 h-9" aria-hidden="true" />
           </div>
           <h1 id="sucesso-title" className="text-2xl font-bold text-slate-900 tracking-tight">
-            Cadastro Concluído!
+            Solicitação de Cadastro Enviada!
           </h1>
-          <p className="text-xs sm:text-sm font-semibold text-primaryDark mt-1.5 flex items-center justify-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-primary inline-block"></span>
-            <span>Aguardando Ativação pela Equipe</span>
+          <p className="text-xs sm:text-sm font-semibold text-amber-700 mt-1.5 flex items-center justify-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>
+            <span>Aguardando Aprovação do Administrador</span>
           </p>
 
           <div className="mt-5 p-4 rounded-2xl bg-slate-50 border border-slate-100 text-left space-y-2.5 text-xs text-slate-600">
@@ -246,14 +246,18 @@ export default function CadastroPage() {
               <span className="text-slate-500">CNPJ:</span>
               <strong className="text-slate-900">{formData.cnpj}</strong>
             </div>
-            <div className="flex justify-between items-center py-1">
-              <span className="text-slate-500">E-mail:</span>
+            <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+              <span className="text-slate-500">E-mail de Login:</span>
               <strong className="text-slate-900">{formData.emailPrincipal}</strong>
+            </div>
+            <div className="flex justify-between items-center py-1">
+              <span className="text-slate-500">Senha de Acesso:</span>
+              <strong className="text-slate-900 font-mono">Definida pelo usuário</strong>
             </div>
           </div>
 
           <p className="mt-5 text-xs text-slate-500 leading-relaxed">
-            Sua empresa foi cadastrada com sucesso. Nossa equipe administrativa validará a documentação e enviará uma notificação para liberação imediata da emissão de notas fiscais.
+            Seus dados cadastrais e credenciais de acesso foram registrados e encaminhados para a fila de aprovação do administrador. Assim que o cadastro for validado e aprovado, você poderá acessar o sistema imediatamente com o e-mail e senha cadastrados.
           </p>
 
           <div className="mt-6">
@@ -296,7 +300,7 @@ export default function CadastroPage() {
             Cadastre sua Empresa
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-500">
-            Emissão de NF descomplicada, retornos fiscais e fechamento em 1 clique
+            Defina seus dados e credenciais de acesso. O cadastro será enviado para aprovação do administrador.
           </p>
         </header>
 
@@ -357,7 +361,7 @@ export default function CadastroPage() {
                   currentStep === 2 ? "text-slate-900" : "text-slate-500"
                 }`}
               >
-                Responsável & Senha
+                Usuário & Aprovação
               </span>
             </button>
           </div>
@@ -559,7 +563,7 @@ export default function CadastroPage() {
                     onClick={handleNextStep}
                     className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-white bg-primary hover:bg-primaryDark font-semibold text-sm shadow-sm transition-all duration-300 ease-in-out hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                   >
-                    <span>Continuar para Dados de Acesso</span>
+                    <span>Continuar para Usuário e Senha</span>
                     <ArrowRight className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </div>
@@ -573,12 +577,23 @@ export default function CadastroPage() {
                   <div className="flex items-center gap-2">
                     <User className="w-4 h-4 text-primary" aria-hidden="true" />
                     <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                      2. Titular e Credenciais de Acesso
+                      2. Credenciais de Acesso & Envio para Aprovação
                     </h2>
                   </div>
                   <span className="text-[11px] font-medium text-slate-400">
                     Etapa 2 de 2
                   </span>
+                </div>
+
+                {/* Banner Informativo de Aprovação */}
+                <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 flex items-start gap-2.5 text-xs text-amber-900">
+                  <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" aria-hidden="true" />
+                  <div>
+                    <strong className="block font-bold">Definição de Acesso & Aprovação</strong>
+                    <span>
+                      Você já define seu usuário e senha agora. Após o envio, o cadastro será encaminhado para análise e aprovação do administrador antes da liberação do sistema.
+                    </span>
+                  </div>
                 </div>
 
                 {/* Nome do Responsável */}
@@ -793,11 +808,11 @@ export default function CadastroPage() {
                     {submitting ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-                        <span>Criando Conta...</span>
+                        <span>Enviando para Aprovação...</span>
                       </>
                     ) : (
                       <>
-                        <span>Finalizar Cadastro</span>
+                        <span>Enviar para Aprovação</span>
                         <ArrowRight className="w-4 h-4" aria-hidden="true" />
                       </>
                     )}
