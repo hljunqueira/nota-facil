@@ -33,10 +33,12 @@ export async function middleware(req: NextRequest) {
   const host = req.headers.get("host") || "";
   const isAdminSubdomain = host.startsWith("admin.");
 
-  // 1. Libera arquivos estáticos, assets de imagem, PWA, storage e webhooks da API
+  // 1. Libera arquivos estáticos, assets de imagem, PWA, storage, rotas públicas de NF-e e webhooks da API
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/storage") ||
+    pathname.startsWith("/nfe") ||
+    pathname.startsWith("/api/public") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/webhooks") ||
     pathname.startsWith("/api/cnpj") ||

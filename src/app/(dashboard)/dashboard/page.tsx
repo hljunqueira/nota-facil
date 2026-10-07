@@ -43,6 +43,7 @@ import { SendInvoiceEmailModal } from "@/components/modules/invoices/SendInvoice
 import { RomaneioModal } from "@/components/modules/invoices/RomaneioModal";
 import { InversionPreparationResult } from "@/lib/services/inversion";
 import { WhatsAppIcon } from "@/components/ui/WhatsAppIcon";
+import { formatInvoiceShareMessage } from "@/lib/services/invoiceShare";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -72,11 +73,21 @@ export default function DashboardPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const handleShareInvoice = (inv: any) => {
-    if (!inv.pdfUrl) return;
-    const msg = encodeURIComponent(
-      `Olá! Segue a DANFE da NF-e nº ${inv.numero || "S/N"} referente ao lote industrializado:\n${inv.pdfUrl}`
-    );
-    window.open(`https://wa.me/?text=${msg}`, "_blank");
+    const origin = typeof window !== "undefined" ? window.location.origin : undefined;
+    const { whatsappUrl, publicUrl, targetPhone } = formatInvoiceShareMessage({
+      invoice: inv,
+      baseUrl: origin,
+    });
+    window.open(whatsappUrl, "_blank");
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(publicUrl).then(() => {
+        setToastMessage(
+          targetPhone
+            ? "Link público copiado e WhatsApp aberto para o parceiro!"
+            : "Link público copiado e WhatsApp aberto!"
+        );
+      }).catch(() => {});
+    }
   };
 
   const loadData = async (

@@ -27,7 +27,9 @@ import {
   Trash2,
   Eye,
   PackageCheck,
+  Link2,
 } from "lucide-react";
+import { formatInvoiceShareMessage, getPublicInvoiceUrl } from "@/lib/services/invoiceShare";
 import { useSession } from "next-auth/react";
 import {
   getInvoicesAction,
@@ -298,32 +300,37 @@ export default function NotasPage() {
   };
 
   const handleShareInvoice = (inv: any) => {
-    const formattedValue = new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(Number(inv.valorTotal));
+    const origin = typeof window !== "undefined" ? window.location.origin : undefined;
+    const { whatsappUrl, publicUrl, targetPhone } = formatInvoiceShareMessage({
+      invoice: inv,
+      baseUrl: origin,
+    });
 
-    const partnerName = inv.partner?.razaoSocial || "Parceiro";
-    const shareText =
-      `*Nota Fácil — NF-e Nº ${inv.numero} (Série ${inv.serie})*\n` +
-      `📄 *Destinatário/Emissor:* ${partnerName}\n` +
-      `💰 *Valor Total:* ${formattedValue}\n` +
-      `🔑 *Chave SEFAZ:* ${inv.chaveAcesso || "Aguardando homologação"}\n` +
-      (inv.pdfUrl ? `📥 *DANFE (PDF):* ${inv.pdfUrl}\n` : "") +
-      (inv.xmlUrl ? `📁 *XML SEFAZ:* ${inv.xmlUrl}\n` : "");
+    // Abre diretamente o WhatsApp (web ou app) com a mensagem formatada e o link público
+    window.open(whatsappUrl, "_blank");
 
-    if (typeof navigator !== "undefined" && navigator.share) {
-      navigator
-        .share({
-          title: `NF-e Nº ${inv.numero} - ${partnerName}`,
-          text: shareText,
-          url: inv.pdfUrl || window.location.href,
-        })
-        .catch(() => {
-          window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, "_blank");
-        });
-    } else {
-      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, "_blank");
+    // Também copia o link para a área de transferência para agilidade
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(publicUrl).then(() => {
+        setToastMessage(
+          targetPhone
+            ? `Link público copiado e WhatsApp aberto para o parceiro!`
+            : `Link público copiado e WhatsApp aberto!`
+        );
+      }).catch(() => {});
+    }
+  };
+
+  const handleCopyPublicLink = (inv: any) => {
+    const origin = typeof window !== "undefined" ? window.location.origin : undefined;
+    const publicUrl = getPublicInvoiceUrl(inv.id, origin);
+
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(publicUrl).then(() => {
+        setToastMessage(`Link público da NF-e #${inv.numero} copiado!`);
+      }).catch(() => {
+        prompt("Copie o link público:", publicUrl);
+      });
     }
   };
 
@@ -1357,15 +1364,24 @@ export default function NotasPage() {
                             </a>
                           )}
 
-                          {/* WhatsApp */}
+                          {/* WhatsApp & Link Público */}
                           {inv.status === "AUTORIZADA" && (
-                            <button
-                              onClick={() => handleShareInvoice(inv)}
-                              title="Enviar pelo WhatsApp"
-                              className="p-1.5 rounded-lg text-slate-500 hover:bg-emerald-50 hover:text-[#25D366] cursor-pointer transition-colors"
-                            >
-                              <WhatsAppIcon className="w-4 h-4" />
-                            </button>
+                            <>
+                              <button
+                                onClick={() => handleShareInvoice(inv)}
+                                title="Enviar link público pelo WhatsApp"
+                                className="p-1.5 rounded-lg text-slate-500 hover:bg-emerald-50 hover:text-[#25D366] cursor-pointer transition-colors"
+                              >
+                                <WhatsAppIcon className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleCopyPublicLink(inv)}
+                                title="Copiar link público de download da NF-e"
+                                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer transition-colors"
+                              >
+                                <Link2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
                           )}
 
                           {/* E-mail */}
